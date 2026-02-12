@@ -2,14 +2,20 @@ services:
   - type: web
     name: subtracker
     env: docker
-    plan: free
+    plan: starter
     autoDeploy: true
     healthCheckPath: /api/health
+    disk:
+      name: subtracker-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: ENV
         value: production
       - key: HOST
         value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/subscriptions.db
       - key: COOKIE_SECURE
         value: "1"
       - key: COOKIE_SAMESITE

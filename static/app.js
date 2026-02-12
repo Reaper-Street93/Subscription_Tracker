@@ -3,6 +3,12 @@ const appShell = document.getElementById("appShell");
 const authForm = document.getElementById("authForm");
 const authTitle = document.getElementById("authTitle");
 const authNameField = document.getElementById("authNameField");
+const authPasswordField = document.getElementById("authPasswordField");
+const authPasswordLabel = document.getElementById("authPasswordLabel");
+const authNewPasswordField = document.getElementById("authNewPasswordField");
+const authConfirmPasswordField = document.getElementById("authConfirmPasswordField");
+const authResetModeBtn = document.getElementById("authResetModeBtn");
+const authBackToLoginBtn = document.getElementById("authBackToLoginBtn");
 const authSubmitBtn = document.getElementById("authSubmitBtn");
 const authLoginModeBtn = document.getElementById("authLoginModeBtn");
 const authSignupModeBtn = document.getElementById("authSignupModeBtn");
@@ -399,12 +405,21 @@ function setDefaultDate() {
 function setAuthMode(mode) {
   authMode = mode;
   const isSignup = mode === "signup";
+  const isReset = mode === "reset";
   const nameInput = authForm.elements.authName;
+  const passwordInput = authForm.elements.authPassword;
+  const newPasswordInput = authForm.elements.authNewPassword;
+  const confirmPasswordInput = authForm.elements.authConfirmPassword;
 
-  authTitle.textContent = isSignup ? "Create Account" : "Sign In";
-  authSubmitBtn.textContent = isSignup ? "Create Account" : "Sign In";
+  authTitle.textContent = isSignup ? "Create Account" : isReset ? "Reset Password" : "Sign In";
+  authSubmitBtn.textContent = isSignup ? "Create Account" : isReset ? "Update Password" : "Sign In";
   authNameField.hidden = !isSignup;
-  authNameField.style.display = isSignup ? "" : "none";
+  authNewPasswordField.hidden = !isReset;
+  authConfirmPasswordField.hidden = !isReset;
+  authResetModeBtn.hidden = !(!isSignup && !isReset);
+  authBackToLoginBtn.hidden = !isReset;
+  authPasswordLabel.textContent = isReset ? "Current Password" : "Password";
+
   if (nameInput) {
     nameInput.disabled = !isSignup;
     nameInput.required = isSignup;
@@ -412,12 +427,29 @@ function setAuthMode(mode) {
       nameInput.value = "";
     }
   }
+  if (passwordInput) {
+    passwordInput.autocomplete = isSignup ? "new-password" : "current-password";
+    passwordInput.placeholder = isReset ? "Your current password" : "At least 8 characters";
+    passwordInput.required = true;
+  }
+  if (newPasswordInput) {
+    newPasswordInput.disabled = !isReset;
+    newPasswordInput.required = isReset;
+    if (!isReset) {
+      newPasswordInput.value = "";
+    }
+  }
+  if (confirmPasswordInput) {
+    confirmPasswordInput.disabled = !isReset;
+    confirmPasswordInput.required = isReset;
+    if (!isReset) {
+      confirmPasswordInput.value = "";
+    }
+  }
 
-  authLoginModeBtn.classList.toggle("active", !isSignup);
+  authLoginModeBtn.classList.toggle("active", mode === "login");
   authSignupModeBtn.classList.toggle("active", isSignup);
-
-  const passwordInput = authForm.elements.authPassword;
-  passwordInput.autocomplete = isSignup ? "new-password" : "current-password";
+  authPasswordField.classList.toggle("reset-password-field", isReset);
 }
 
 function clearDataState() {
@@ -1031,10 +1063,21 @@ authSignupModeBtn.addEventListener("click", () => {
   setAuthMessage("");
 });
 
+authResetModeBtn.addEventListener("click", () => {
+  setAuthMode("reset");
+  setAuthMessage("");
+});
+
+authBackToLoginBtn.addEventListener("click", () => {
+  setAuthMode("login");
+  setAuthMessage("");
+});
+
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const wasSignup = authMode === "signup";
-  setAuthMessage(wasSignup ? "Creating account..." : "Signing in...");
+  const wasReset = authMode === "reset";
+  setAuthMessage(wasSignup ? "Creating account..." : wasReset ? "Updating password..." : "Signing in...");
 
   const formData = new FormData(authForm);
   const payload = {
@@ -1045,14 +1088,30 @@ authForm.addEventListener("submit", async (event) => {
   if (wasSignup) {
     payload.name = String(formData.get("authName") || "").trim();
   }
+  if (wasReset) {
+    payload.currentPassword = String(formData.get("authPassword") || "");
+    payload.newPassword = String(formData.get("authNewPassword") || "");
+    const confirmPassword = String(formData.get("authConfirmPassword") || "");
+    if (payload.newPassword !== confirmPassword) {
+      setAuthMessage("New passwords do not match.", "error");
+      return;
+    }
+  }
 
-  const endpoint = wasSignup ? "/api/auth/signup" : "/api/auth/login";
+  const endpoint = wasSignup ? "/api/auth/signup" : wasReset ? "/api/auth/reset-password" : "/api/auth/login";
 
   try {
     const data = await apiRequest(endpoint, {
       method: "POST",
       body: JSON.stringify(payload),
     });
+
+    if (wasReset) {
+      authForm.reset();
+      setAuthMode("login");
+      setAuthMessage("Password updated. Please sign in.", "success");
+      return;
+    }
 
     setAuthenticatedUser(data.user);
     authForm.reset();

@@ -14,7 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-DB_PATH = Path(__file__).with_name("subscriptions.db")
+DB_PATH = Path(os.environ.get("DB_PATH", str(Path(__file__).with_name("subscriptions.db"))))
 STATIC_DIR = Path(__file__).with_name("static")
 DATE_FORMAT = "%Y-%m-%d"
 SESSION_COOKIE_NAME = "subtracker_session"
@@ -321,6 +321,7 @@ def cleanup_login_rate_limits(
 
 
 def init_db() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -551,6 +552,25 @@ def parse_auth_payload(body: dict[str, object], require_name: bool) -> tuple[dic
     return {"name": name, "email": email, "password": password}, None
 
 
+def parse_password_reset_payload(body: dict[str, object]) -> tuple[dict[str, str] | None, str | None]:
+    email = str(body.get("email", "")).strip().lower()
+    current_password = str(body.get("currentPassword", ""))
+    new_password = str(body.get("newPassword", ""))
+
+    if "@" not in email or "." not in email:
+        return None, "A valid email is required"
+    if len(current_password) < 8:
+        return None, "Current password must be at least 8 characters"
+    if len(new_password) < 8:
+        return None, "New password must be at least 8 characters"
+
+    return {
+        "email": email,
+        "current_password": current_password,
+        "new_password": new_password,
+    }, None
+
+
 def issue_session(conn: sqlite3.Connection, user_id: int, *, rotate_existing: bool = True) -> str:
     conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (utc_now_iso(),))
     if rotate_existing:
@@ -777,6 +797,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._auth_signup()
         if parsed.path == "/api/auth/login":
             return self._auth_login()
+        if parsed.path == "/api/auth/reset-password":
+            return self._auth_reset_password()
         if parsed.path == "/api/auth/logout":
             return self._auth_logout()
 
@@ -937,6 +959,61 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             {"user": serialize_user(user)},
             extra_headers=[self._session_cookie_header(token), self._csrf_cookie_header(csrf_token)],
         )
+
+    def _auth_reset_password(self) -> None:
+        try:
+            body = self._read_json()
+        except json.JSONDecodeError:
+            return self._send_json({"error": "Invalid JSON body"}, status=400)
+
+        payload, error = parse_password_reset_payload(body)
+        if error or payload is None:
+            return self._send_json({"error": error or "Invalid payload"}, status=400)
+
+        limit_key = f"{self._client_ip()}|{payload['email']}|reset"
+        with self._db() as conn:
+            cleanup_login_rate_limits(conn)
+            limited, retry_after = check_login_rate_limit(conn, limit_key)
+            if limited:
+                return self._send_json(
+                    {"error": "Too many reset attempts. Try again later."},
+                    status=429,
+                    extra_headers=[("Retry-After", str(retry_after))],
+                )
+
+            user = conn.execute("SELECT * FROM users WHERE email = ?", (payload["email"],)).fetchone()
+            if user is None or not verify_password(payload["current_password"], str(user["password_hash"])):
+                lock_seconds = register_login_failure(conn, limit_key)
+                if lock_seconds > 0:
+                    return self._send_json(
+                        {"error": "Too many reset attempts. Try again later."},
+                        status=429,
+                        extra_headers=[("Retry-After", str(lock_seconds))],
+                    )
+                log_security_event(
+                    "reset_password_failed",
+                    email_hash=hash_identifier(payload["email"]),
+                    client_ip=self._client_ip(),
+                )
+                return self._send_json({"error": "Invalid email or current password"}, status=401)
+
+            if verify_password(payload["new_password"], str(user["password_hash"])):
+                return self._send_json({"error": "New password must be different from current password"}, status=400)
+
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(payload["new_password"]), int(user["id"])),
+            )
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (int(user["id"]),))
+            clear_login_rate_limit(conn, limit_key)
+
+        log_security_event(
+            "reset_password_succeeded",
+            user_id=int(user["id"]),
+            email_hash=hash_identifier(payload["email"]),
+            client_ip=self._client_ip(),
+        )
+        self._send_json({"reset": True})
 
     def _auth_logout(self) -> None:
         token = self._session_token_from_cookie()

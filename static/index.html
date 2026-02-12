@@ -91,8 +91,8 @@
             Email
             <input type="email" name="authEmail" placeholder="you@example.com" autocomplete="email" required />
           </label>
-          <label>
-            Password
+          <label id="authPasswordField">
+            <span id="authPasswordLabel">Password</span>
             <input
               type="password"
               name="authPassword"
@@ -102,6 +102,32 @@
               required
             />
           </label>
+          <label id="authNewPasswordField" hidden>
+            New Password
+            <input
+              type="password"
+              name="authNewPassword"
+              minlength="8"
+              placeholder="At least 8 characters"
+              autocomplete="new-password"
+              disabled
+            />
+          </label>
+          <label id="authConfirmPasswordField" hidden>
+            Confirm New Password
+            <input
+              type="password"
+              name="authConfirmPassword"
+              minlength="8"
+              placeholder="Repeat new password"
+              autocomplete="new-password"
+              disabled
+            />
+          </label>
+          <div class="auth-helper-row">
+            <button id="authResetModeBtn" class="text-link" type="button">Forgot password?</button>
+            <button id="authBackToLoginBtn" class="text-link" type="button" hidden>Back to login</button>
+          </div>
           <button id="authSubmitBtn" type="submit">Sign In</button>
           <p id="authMessage" class="form-message" role="status" aria-live="polite"></p>
         </form>

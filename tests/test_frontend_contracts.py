@@ -25,6 +25,10 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('id="logoutBtn"', self.index)
         self.assertIn('id="authHeroTitle"', self.index)
         self.assertIn("👋", self.index)
+        self.assertIn('id="authResetModeBtn"', self.index)
+        self.assertIn('id="authBackToLoginBtn"', self.index)
+        self.assertIn('id="authNewPasswordField"', self.index)
+        self.assertIn('id="authConfirmPasswordField"', self.index)
 
     def test_index_has_filter_and_category_controls(self) -> None:
         expected_ids = [
@@ -59,6 +63,7 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('"/api/auth/me"', self.app_js)
         self.assertIn('"/api/auth/signup"', self.app_js)
         self.assertIn('"/api/auth/login"', self.app_js)
+        self.assertIn('"/api/auth/reset-password"', self.app_js)
         self.assertIn('"/api/auth/logout"', self.app_js)
 
     def test_app_wires_category_and_subscription_endpoints(self) -> None:
@@ -83,6 +88,9 @@ class FrontendContractsTests(unittest.TestCase):
             ".mode-pill",
             ".auth-hero-title",
             'input[type="date"]',
+            ".auth-helper-row",
+            ".text-link",
+            "[hidden]",
         ]
         for selector in selectors:
             with self.subTest(selector=selector):
@@ -123,7 +131,9 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("subtracker-spend-view", self.app_js)
         self.assertIn("nameInput.disabled = !isSignup", self.app_js)
         self.assertIn("nameInput.required = isSignup", self.app_js)
-        self.assertIn("authNameField.style.display = isSignup ? \"\" : \"none\"", self.app_js)
+        self.assertIn("authResetModeBtn.hidden", self.app_js)
+        self.assertIn("authBackToLoginBtn.hidden", self.app_js)
+        self.assertIn("authNewPasswordField.hidden", self.app_js)
         self.assertIn('classList.toggle("auth-view"', self.app_js)
         self.assertIn("heroHeader.hidden", self.app_js)
 

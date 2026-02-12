@@ -4,6 +4,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 
 ## Features
 - User authentication (sign up, sign in, sign out)
+- Reset password flow from sign-in form (email + current password + new password)
 - Theme switcher (dark/light, default dark)
 - Currency selector with conversion across money displays and form input (USD, GBP, EUR, CAD, AUD, JPY)
 - Add subscription
@@ -57,10 +58,11 @@ From project root:
 ## Go Live (Render)
 1. Open the Render blueprint deploy link for this repo:  
    [Deploy SubTracker](https://dashboard.render.com/blueprint/new?repo=https://github.com/Reaper-Street93/Subscription_Tracker)
-2. Render will read `/render.yaml` and provision the web service with production-safe env defaults.
+2. Render will read `/render.yaml` and provision the web service with production-safe env defaults and a persistent disk for SQLite data.
 3. After deploy finishes, open the generated Render URL (expected: `https://subtracker.onrender.com`).
 4. Verify health endpoint:
    - `GET /api/health` should return `{ \"ok\": true }`.
+5. This blueprint uses a persistent disk and `starter` plan so accounts/subscriptions remain after redeploys.
 
 ## Deploy (Generic Python Host)
 - Build command: none required
@@ -96,6 +98,7 @@ From project root:
 - `GET /api/auth/me`
 - `POST /api/auth/signup`
 - `POST /api/auth/login`
+- `POST /api/auth/reset-password`
 - `POST /api/auth/logout`
 - `GET /api/subscriptions`
 - `POST /api/subscriptions`

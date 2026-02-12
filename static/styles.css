@@ -387,12 +387,37 @@ label {
   min-width: 0;
 }
 
-#authNameField[hidden] {
+[hidden] {
   display: none !important;
 }
 
 .billing-label-text {
   white-space: nowrap;
+}
+
+.auth-helper-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.text-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.text-link:hover {
+  color: var(--accent-hover);
+  background: transparent;
+}
+
+.reset-password-field {
+  margin-bottom: 0;
 }
 
 input,
