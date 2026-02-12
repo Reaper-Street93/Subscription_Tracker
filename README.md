@@ -30,10 +30,32 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
    ```
 3. Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
+## Run With Docker
+1. Build:
+   ```bash
+   docker build -t subscription-compass .
+   ```
+2. Run:
+   ```bash
+   docker run --rm -p 8000:8000 subscription-compass
+   ```
+3. Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+## Deploy (Generic Python Host)
+- Build command: none required
+- Start command:
+  ```bash
+  python server.py
+  ```
+- Required env vars:
+  - `HOST=0.0.0.0`
+  - `PORT` from your provider (or `8000`)
+
 ## API Endpoints
 - `GET /api/health`
 - `GET /api/subscriptions`
 - `POST /api/subscriptions`
+- `PUT /api/subscriptions/:id`
 - `DELETE /api/subscriptions/:id`
 - `GET /api/reminders`
 
