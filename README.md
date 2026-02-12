@@ -65,12 +65,14 @@ From project root:
   - `COOKIE_SAMESITE=Lax` (or `Strict`)
   - `SESSION_DURATION_DAYS=7`
   - `SESSION_IDLE_TIMEOUT_MINUTES=30` (set `0` to disable idle timeout)
+  - `LOGIN_RATE_LIMIT_RETENTION_HOURS=48`
 
 ## Security
 - Passwords are stored using PBKDF2-HMAC-SHA256 with per-user salts.
 - Session auth uses `HttpOnly` cookies.
 - CSRF protection is enforced on authenticated mutating routes (`POST`, `PUT`, `DELETE` for subscriptions/categories and logout) using an `X-CSRF-Token` header that must match the CSRF cookie.
 - Login rate limiting is enforced per `IP + email` and persisted in SQLite (`5` attempts per `10` minutes, then `15` minute lockout).
+- Stale login rate-limit rows are automatically purged (default retention `48` hours).
 - HTTP security headers are applied to all responses: `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`.
 - Sessions are rotated on login (prior sessions for the same user are invalidated).
 - Session duration defaults to `30` days in local/dev and `7` days in production (override with `SESSION_DURATION_DAYS`).

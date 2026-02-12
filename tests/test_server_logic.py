@@ -186,6 +186,58 @@ class ServerLogicTests(unittest.TestCase):
             self.assertFalse(limited)
             self.assertEqual(retry, 0)
 
+    def test_cleanup_login_rate_limits_removes_stale_rows(self) -> None:
+        now = datetime(2026, 2, 12, 12, 0, 0)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO login_rate_limits (limiter_key, failed_attempts, first_failed_at, last_failed_at, locked_until)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "old-attempts",
+                    1,
+                    (now - timedelta(days=4)).isoformat(timespec="seconds"),
+                    (now - timedelta(days=4)).isoformat(timespec="seconds"),
+                    None,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO login_rate_limits (limiter_key, failed_attempts, first_failed_at, last_failed_at, locked_until)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "expired-lock",
+                    server.LOGIN_MAX_ATTEMPTS,
+                    (now - timedelta(hours=2)).isoformat(timespec="seconds"),
+                    (now - timedelta(hours=2)).isoformat(timespec="seconds"),
+                    (now - timedelta(minutes=1)).isoformat(timespec="seconds"),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO login_rate_limits (limiter_key, failed_attempts, first_failed_at, last_failed_at, locked_until)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "active-lock",
+                    server.LOGIN_MAX_ATTEMPTS,
+                    now.isoformat(timespec="seconds"),
+                    now.isoformat(timespec="seconds"),
+                    (now + timedelta(minutes=10)).isoformat(timespec="seconds"),
+                ),
+            )
+
+            deleted = server.cleanup_login_rate_limits(conn, now=now, retention=timedelta(hours=24))
+            self.assertEqual(deleted, 2)
+
+            remaining = {
+                row["limiter_key"]
+                for row in conn.execute("SELECT limiter_key FROM login_rate_limits").fetchall()
+            }
+            self.assertEqual(remaining, {"active-lock"})
+
     def test_session_duration_policy(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             self.assertEqual(server.session_duration_days(), 30)

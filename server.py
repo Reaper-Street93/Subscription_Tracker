@@ -22,6 +22,7 @@ PASSWORD_HASH_ITERATIONS = 200_000
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW = timedelta(minutes=10)
 LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
+DEFAULT_LOGIN_RATE_LIMIT_RETENTION_HOURS = 48
 DEFAULT_SESSION_DURATION_DAYS = 30
 PRODUCTION_SESSION_DURATION_DAYS = 7
 DEFAULT_IDLE_TIMEOUT_MINUTES = 0
@@ -70,6 +71,18 @@ def session_idle_timeout_minutes() -> int:
         except ValueError:
             pass
     return DEFAULT_IDLE_TIMEOUT_MINUTES
+
+
+def login_rate_limit_retention_hours() -> int:
+    raw = os.environ.get("LOGIN_RATE_LIMIT_RETENTION_HOURS", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+    return DEFAULT_LOGIN_RATE_LIMIT_RETENTION_HOURS
 
 
 def is_session_idle_expired(
@@ -245,6 +258,42 @@ def clear_login_rate_limit(conn: sqlite3.Connection, key: str) -> None:
     conn.execute("DELETE FROM login_rate_limits WHERE limiter_key = ?", (key,))
 
 
+def cleanup_login_rate_limits(
+    conn: sqlite3.Connection,
+    *,
+    now: datetime | None = None,
+    retention: timedelta | None = None,
+) -> int:
+    current_time = now or datetime.utcnow()
+    keep_window = retention or timedelta(hours=login_rate_limit_retention_hours())
+    cutoff = current_time - keep_window
+
+    rows = conn.execute(
+        """
+        SELECT limiter_key, last_failed_at, locked_until
+        FROM login_rate_limits
+        """
+    ).fetchall()
+
+    stale_keys: list[str] = []
+    for row in rows:
+        key = str(row["limiter_key"])
+        locked_until = _parse_iso_datetime(str(row["locked_until"]) if row["locked_until"] is not None else None)
+        if locked_until and locked_until <= current_time:
+            stale_keys.append(key)
+            continue
+
+        last_failed_at = _parse_iso_datetime(str(row["last_failed_at"]) if row["last_failed_at"] is not None else None)
+        if last_failed_at is not None and last_failed_at <= cutoff:
+            stale_keys.append(key)
+
+    if not stale_keys:
+        return 0
+
+    conn.executemany("DELETE FROM login_rate_limits WHERE limiter_key = ?", ((key,) for key in stale_keys))
+    return len(stale_keys)
+
+
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -316,6 +365,7 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_login_rate_limits_locked_until ON login_rate_limits(locked_until)")
+        cleanup_login_rate_limits(conn)
 
 
 def ensure_subscription_user_column(conn: sqlite3.Connection) -> None:
@@ -786,6 +836,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
 
         limit_key = f"{self._client_ip()}|{payload['email']}"
         with self._db() as conn:
+            cleanup_login_rate_limits(conn)
             limited, retry_after = check_login_rate_limit(conn, limit_key)
             if limited:
                 return self._send_json(
