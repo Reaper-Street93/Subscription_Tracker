@@ -135,8 +135,10 @@ body {
 }
 
 .auth-view .layout {
-  max-width: 560px;
+  max-width: 760px;
   margin-top: 2.2rem;
+  justify-items: center;
+  gap: 0.8rem;
 }
 
 .auth-view .hero {
@@ -145,6 +147,23 @@ body {
 
 .auth-view .auth-panel {
   margin: 0 auto;
+  width: min(680px, 100%);
+  max-width: none;
+  padding: 1.25rem;
+}
+
+.auth-hero-title {
+  display: none;
+  margin: 0;
+}
+
+.auth-view .auth-hero-title {
+  display: block;
+  text-align: center;
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--text);
 }
 
 .layout {

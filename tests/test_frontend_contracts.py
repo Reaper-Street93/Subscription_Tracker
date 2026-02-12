@@ -23,6 +23,8 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('id="appShell"', self.index)
         self.assertIn('id="authForm"', self.index)
         self.assertIn('id="logoutBtn"', self.index)
+        self.assertIn('id="authHeroTitle"', self.index)
+        self.assertIn("hello 👋", self.index)
 
     def test_index_has_filter_and_category_controls(self) -> None:
         expected_ids = [
@@ -79,6 +81,7 @@ class FrontendContractsTests(unittest.TestCase):
             ".hero-aside",
             ".chart-mode-toggle",
             ".mode-pill",
+            ".auth-hero-title",
         ]
         for selector in selectors:
             with self.subTest(selector=selector):
