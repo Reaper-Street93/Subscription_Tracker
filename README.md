@@ -8,6 +8,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 - Monthly cost auto-calculated (monthly, quarterly, yearly billing)
 - Total monthly spend summary
 - Upcoming payment reminders
+- Optional browser notifications for payments due in 3 days or less
 - Pie chart of monthly spend by category
 
 ## Tech Stack

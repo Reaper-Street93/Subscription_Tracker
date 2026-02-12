@@ -362,6 +362,18 @@ td:last-child {
   gap: 0.7rem;
 }
 
+.reminder-controls {
+  display: grid;
+  gap: 0.38rem;
+  margin-bottom: 0.78rem;
+}
+
+.notification-status {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
 .reminder-item {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;

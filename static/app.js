@@ -13,6 +13,8 @@ const nextReminderEl = document.getElementById("nextReminder");
 const pieChartEl = document.getElementById("pieChart");
 const pieLegendEl = document.getElementById("pieLegend");
 const nextPaymentInput = document.querySelector('input[name="nextPaymentDate"]');
+const enableNotificationsBtn = document.getElementById("enableNotificationsBtn");
+const notificationStatusEl = document.getElementById("notificationStatus");
 
 let editingId = null;
 
@@ -106,6 +108,7 @@ async function loadDashboard() {
     renderSubscriptions(subscriptionsData.subscriptions);
     renderReminders(remindersData.reminders);
     renderPieChart(subscriptionsData.spendingByCategory);
+    maybeNotifyDueSoon(remindersData.reminders);
   } catch (error) {
     setFormMessage(error.message, "error");
   }
@@ -270,6 +273,62 @@ function renderPieChart(spendingByCategory) {
   pieChartEl.style.background = `conic-gradient(${gradientParts.join(", ")})`;
 }
 
+function notificationsSupported() {
+  return typeof window !== "undefined" && "Notification" in window;
+}
+
+function updateNotificationStatus() {
+  if (!notificationsSupported()) {
+    enableNotificationsBtn.disabled = true;
+    enableNotificationsBtn.textContent = "Browser Alerts Unsupported";
+    notificationStatusEl.textContent = "This browser does not support notifications.";
+    return;
+  }
+
+  if (Notification.permission === "granted") {
+    enableNotificationsBtn.disabled = true;
+    enableNotificationsBtn.textContent = "Browser Alerts Enabled";
+    notificationStatusEl.textContent = "Alerts enabled. You will be notified for upcoming due payments.";
+    return;
+  }
+
+  enableNotificationsBtn.disabled = false;
+  enableNotificationsBtn.textContent = "Enable Browser Alerts";
+  notificationStatusEl.textContent =
+    Notification.permission === "denied"
+      ? "Alerts blocked. Re-enable notifications in browser site settings."
+      : "Notifications are off.";
+}
+
+function maybeNotifyDueSoon(reminders) {
+  if (!notificationsSupported() || Notification.permission !== "granted") {
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const reminder of reminders) {
+    if (reminder.daysUntilPayment > 3) {
+      continue;
+    }
+
+    const key = `subtracker:notified:${today}:${reminder.id}`;
+    if (localStorage.getItem(key)) {
+      continue;
+    }
+
+    const dueText =
+      reminder.daysUntilPayment === 0
+        ? "is due today"
+        : `is due in ${reminder.daysUntilPayment} day${reminder.daysUntilPayment === 1 ? "" : "s"}`;
+
+    new Notification(`${reminder.name} payment reminder`, {
+      body: `${currency.format(reminder.amount)} ${dueText} (${toFriendlyDate(reminder.nextPaymentDate)}).`,
+    });
+    localStorage.setItem(key, "1");
+  }
+}
+
 async function deleteSubscription(id) {
   try {
     await apiRequest(`/api/subscriptions/${id}`, { method: "DELETE" });
@@ -318,5 +377,29 @@ cancelEditBtn.addEventListener("click", () => {
   setFormMessage("Edit cancelled.");
 });
 
+enableNotificationsBtn.addEventListener("click", async () => {
+  if (!notificationsSupported()) {
+    setFormMessage("This browser does not support notifications.", "error");
+    updateNotificationStatus();
+    return;
+  }
+
+  if (Notification.permission === "denied") {
+    setFormMessage("Notifications are blocked. Update browser site settings to enable alerts.", "error");
+    updateNotificationStatus();
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission === "granted") {
+    setFormMessage("Browser alerts enabled.", "success");
+  } else {
+    setFormMessage("Browser alerts were not enabled.");
+  }
+  updateNotificationStatus();
+  await loadDashboard();
+});
+
 setDefaultDate();
+updateNotificationStatus();
 loadDashboard();
