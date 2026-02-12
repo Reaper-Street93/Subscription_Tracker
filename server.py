@@ -7,7 +7,6 @@ import json
 import os
 import secrets
 import sqlite3
-import threading
 from datetime import date, datetime, timedelta
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -154,62 +153,96 @@ def is_valid_csrf_pair(cookie_token: str | None, header_token: str | None) -> bo
     return hmac.compare_digest(cookie_token, header_token)
 
 
-class LoginRateLimiter:
-    def __init__(
-        self,
-        *,
-        max_attempts: int = LOGIN_MAX_ATTEMPTS,
-        attempt_window: timedelta = LOGIN_ATTEMPT_WINDOW,
-        lockout_duration: timedelta = LOGIN_LOCKOUT_DURATION,
-    ) -> None:
-        self.max_attempts = max_attempts
-        self.attempt_window = attempt_window
-        self.lockout_duration = lockout_duration
-        self._entries: dict[str, dict[str, object]] = {}
-        self._lock = threading.Lock()
-
-    def _prune_attempts(self, attempts: list[datetime], now: datetime) -> list[datetime]:
-        return [item for item in attempts if now - item <= self.attempt_window]
-
-    def is_limited(self, key: str, now: datetime | None = None) -> tuple[bool, int]:
-        current_time = now or datetime.utcnow()
-        with self._lock:
-            entry = self._entries.get(key)
-            if entry is None:
-                return False, 0
-
-            locked_until = entry.get("locked_until")
-            if isinstance(locked_until, datetime):
-                if locked_until > current_time:
-                    retry_after = int((locked_until - current_time).total_seconds())
-                    return True, max(1, retry_after)
-                entry["locked_until"] = None
-                entry["attempts"] = []
-
-            attempts = self._prune_attempts(list(entry.get("attempts", [])), current_time)
-            entry["attempts"] = attempts
-            return False, 0
-
-    def register_failure(self, key: str, now: datetime | None = None) -> int:
-        current_time = now or datetime.utcnow()
-        with self._lock:
-            entry = self._entries.setdefault(key, {"attempts": [], "locked_until": None})
-            attempts = self._prune_attempts(list(entry.get("attempts", [])), current_time)
-            attempts.append(current_time)
-            entry["attempts"] = attempts
-
-            if len(attempts) >= self.max_attempts:
-                locked_until = current_time + self.lockout_duration
-                entry["locked_until"] = locked_until
-                return int(self.lockout_duration.total_seconds())
-            return 0
-
-    def clear(self, key: str) -> None:
-        with self._lock:
-            self._entries.pop(key, None)
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
-LOGIN_RATE_LIMITER = LoginRateLimiter()
+def check_login_rate_limit(
+    conn: sqlite3.Connection,
+    key: str,
+    *,
+    now: datetime | None = None,
+) -> tuple[bool, int]:
+    current_time = now or datetime.utcnow()
+    row = conn.execute(
+        """
+        SELECT failed_attempts, first_failed_at, locked_until
+        FROM login_rate_limits
+        WHERE limiter_key = ?
+        """,
+        (key,),
+    ).fetchone()
+    if row is None:
+        return False, 0
+
+    locked_until = _parse_iso_datetime(str(row["locked_until"]) if row["locked_until"] is not None else None)
+    if locked_until and locked_until > current_time:
+        retry_after = int((locked_until - current_time).total_seconds())
+        return True, max(1, retry_after)
+
+    first_failed_at = _parse_iso_datetime(str(row["first_failed_at"]) if row["first_failed_at"] is not None else None)
+    if (locked_until and locked_until <= current_time) or (
+        first_failed_at and (current_time - first_failed_at > LOGIN_ATTEMPT_WINDOW)
+    ):
+        conn.execute("DELETE FROM login_rate_limits WHERE limiter_key = ?", (key,))
+
+    return False, 0
+
+
+def register_login_failure(
+    conn: sqlite3.Connection,
+    key: str,
+    *,
+    now: datetime | None = None,
+) -> int:
+    current_time = now or datetime.utcnow()
+    now_iso = current_time.isoformat(timespec="seconds")
+    row = conn.execute(
+        """
+        SELECT failed_attempts, first_failed_at
+        FROM login_rate_limits
+        WHERE limiter_key = ?
+        """,
+        (key,),
+    ).fetchone()
+
+    attempts = 1
+    first_failed_at = now_iso
+    if row is not None:
+        existing_first = _parse_iso_datetime(str(row["first_failed_at"]) if row["first_failed_at"] is not None else None)
+        if existing_first and current_time - existing_first <= LOGIN_ATTEMPT_WINDOW:
+            attempts = int(row["failed_attempts"] or 0) + 1
+            first_failed_at = existing_first.isoformat(timespec="seconds")
+
+    locked_until_iso: str | None = None
+    lock_seconds = 0
+    if attempts >= LOGIN_MAX_ATTEMPTS:
+        locked_until = current_time + LOGIN_LOCKOUT_DURATION
+        locked_until_iso = locked_until.isoformat(timespec="seconds")
+        lock_seconds = int(LOGIN_LOCKOUT_DURATION.total_seconds())
+
+    conn.execute(
+        """
+        INSERT INTO login_rate_limits (limiter_key, failed_attempts, first_failed_at, last_failed_at, locked_until)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(limiter_key) DO UPDATE SET
+            failed_attempts = excluded.failed_attempts,
+            first_failed_at = excluded.first_failed_at,
+            last_failed_at = excluded.last_failed_at,
+            locked_until = excluded.locked_until
+        """,
+        (key, attempts, first_failed_at, now_iso, locked_until_iso),
+    )
+    return lock_seconds
+
+
+def clear_login_rate_limit(conn: sqlite3.Connection, key: str) -> None:
+    conn.execute("DELETE FROM login_rate_limits WHERE limiter_key = ?", (key,))
 
 
 def init_db() -> None:
@@ -265,12 +298,24 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS login_rate_limits (
+                limiter_key TEXT PRIMARY KEY,
+                failed_attempts INTEGER NOT NULL,
+                first_failed_at TEXT NOT NULL,
+                last_failed_at TEXT NOT NULL,
+                locked_until TEXT
+            )
+            """
+        )
         ensure_subscription_user_column(conn)
         ensure_session_last_seen_column(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_login_rate_limits_locked_until ON login_rate_limits(locked_until)")
 
 
 def ensure_subscription_user_column(conn: sqlite3.Connection) -> None:
@@ -740,18 +785,18 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._send_json({"error": error or "Invalid payload"}, status=400)
 
         limit_key = f"{self._client_ip()}|{payload['email']}"
-        limited, retry_after = LOGIN_RATE_LIMITER.is_limited(limit_key)
-        if limited:
-            return self._send_json(
-                {"error": "Too many login attempts. Try again later."},
-                status=429,
-                extra_headers=[("Retry-After", str(retry_after))],
-            )
-
         with self._db() as conn:
+            limited, retry_after = check_login_rate_limit(conn, limit_key)
+            if limited:
+                return self._send_json(
+                    {"error": "Too many login attempts. Try again later."},
+                    status=429,
+                    extra_headers=[("Retry-After", str(retry_after))],
+                )
+
             user = conn.execute("SELECT * FROM users WHERE email = ?", (payload["email"],)).fetchone()
             if user is None or not verify_password(payload["password"], str(user["password_hash"])):
-                lock_seconds = LOGIN_RATE_LIMITER.register_failure(limit_key)
+                lock_seconds = register_login_failure(conn, limit_key)
                 if lock_seconds > 0:
                     return self._send_json(
                         {"error": "Too many login attempts. Try again later."},
@@ -762,7 +807,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
 
             seed_default_categories(conn, int(user["id"]))
             token = issue_session(conn, int(user["id"]))
-            LOGIN_RATE_LIMITER.clear(limit_key)
+            clear_login_rate_limit(conn, limit_key)
 
         csrf_token = secrets.token_urlsafe(24)
         self._send_json(

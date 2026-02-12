@@ -35,6 +35,7 @@ class ServerLogicTests(unittest.TestCase):
         self.assertIn("sessions", tables)
         self.assertIn("subscriptions", tables)
         self.assertIn("categories", tables)
+        self.assertIn("login_rate_limits", tables)
 
     def test_hash_and_verify_password(self) -> None:
         hashed = server.hash_password("password123")
@@ -155,30 +156,35 @@ class ServerLogicTests(unittest.TestCase):
             self.assertIn("Secure", header)
             self.assertNotIn("HttpOnly", header)
 
-    def test_login_rate_limiter_locks_after_threshold(self) -> None:
-        limiter = server.LoginRateLimiter(
-            max_attempts=2,
-            attempt_window=timedelta(minutes=5),
-            lockout_duration=timedelta(minutes=7),
-        )
+    def test_login_rate_limit_persists_and_expires(self) -> None:
         key = "127.0.0.1|user@example.com"
         now = datetime(2026, 2, 12, 12, 0, 0)
 
-        limited, retry = limiter.is_limited(key, now=now)
-        self.assertFalse(limited)
-        self.assertEqual(retry, 0)
+        with self._connect() as conn:
+            limited, retry = server.check_login_rate_limit(conn, key, now=now)
+            self.assertFalse(limited)
+            self.assertEqual(retry, 0)
 
-        self.assertEqual(limiter.register_failure(key, now=now), 0)
-        lock_seconds = limiter.register_failure(key, now=now + timedelta(seconds=10))
-        self.assertGreater(lock_seconds, 0)
+            for i in range(server.LOGIN_MAX_ATTEMPTS - 1):
+                lock_seconds = server.register_login_failure(conn, key, now=now + timedelta(seconds=i))
+                self.assertEqual(lock_seconds, 0)
 
-        limited, retry = limiter.is_limited(key, now=now + timedelta(seconds=20))
-        self.assertTrue(limited)
-        self.assertGreater(retry, 0)
+            lock_seconds = server.register_login_failure(conn, key, now=now + timedelta(seconds=20))
+            self.assertGreater(lock_seconds, 0)
 
-        limited, retry = limiter.is_limited(key, now=now + timedelta(minutes=8))
-        self.assertFalse(limited)
-        self.assertEqual(retry, 0)
+        # Confirm lock state persists when reading from a fresh DB connection.
+        with self._connect() as conn:
+            limited, retry = server.check_login_rate_limit(conn, key, now=now + timedelta(seconds=30))
+            self.assertTrue(limited)
+            self.assertGreater(retry, 0)
+
+            limited, retry = server.check_login_rate_limit(
+                conn,
+                key,
+                now=now + timedelta(seconds=20) + server.LOGIN_LOCKOUT_DURATION + timedelta(seconds=1),
+            )
+            self.assertFalse(limited)
+            self.assertEqual(retry, 0)
 
     def test_session_duration_policy(self) -> None:
         with patch.dict("os.environ", {}, clear=True):

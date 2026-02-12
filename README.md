@@ -70,7 +70,7 @@ From project root:
 - Passwords are stored using PBKDF2-HMAC-SHA256 with per-user salts.
 - Session auth uses `HttpOnly` cookies.
 - CSRF protection is enforced on authenticated mutating routes (`POST`, `PUT`, `DELETE` for subscriptions/categories and logout) using an `X-CSRF-Token` header that must match the CSRF cookie.
-- Login rate limiting is enforced per `IP + email` to reduce brute-force attempts (`5` attempts per `10` minutes, then `15` minute lockout).
+- Login rate limiting is enforced per `IP + email` and persisted in SQLite (`5` attempts per `10` minutes, then `15` minute lockout).
 - HTTP security headers are applied to all responses: `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`.
 - Sessions are rotated on login (prior sessions for the same user are invalidated).
 - Session duration defaults to `30` days in local/dev and `7` days in production (override with `SESSION_DURATION_DAYS`).
@@ -117,6 +117,13 @@ Each category stores:
 - `user_id`
 - `name`
 - `created_at`
+
+Each login rate-limit entry stores:
+- `limiter_key` (`IP + email`)
+- `failed_attempts`
+- `first_failed_at`
+- `last_failed_at`
+- `locked_until`
 
 ## Calculation Rules
 - Monthly cost:
