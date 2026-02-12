@@ -4,6 +4,7 @@ import calendar
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -43,9 +44,34 @@ DEFAULT_CATEGORIES = [
     "Other",
 ]
 
+SECURITY_LOGGER = logging.getLogger("subtracker.security")
+
 
 def utc_now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
+
+
+def hash_identifier(value: str) -> str:
+    return hashlib.sha256(value.strip().lower().encode("utf-8")).hexdigest()[:16]
+
+
+def build_security_event(event_type: str, **fields: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "event": event_type,
+        "timestamp": utc_now_iso(),
+    }
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            payload[key] = value
+        else:
+            payload[key] = str(value)
+    return payload
+
+
+def log_security_event(event_type: str, **fields: object) -> None:
+    SECURITY_LOGGER.info(json.dumps(build_security_event(event_type, **fields), sort_keys=True))
 
 
 def session_duration_days() -> int:
@@ -637,6 +663,12 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
     def _require_csrf(self) -> bool:
         if self._csrf_is_valid():
             return True
+        log_security_event(
+            "csrf_validation_failed",
+            path=self.path,
+            method=self.command,
+            client_ip=self._client_ip(),
+        )
         self._send_json({"error": "Invalid CSRF token"}, status=403)
         return False
 
@@ -668,6 +700,12 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 return None
 
             if is_session_idle_expired(str(row["last_seen_at"]), now=current_time):
+                log_security_event(
+                    "session_idle_expired",
+                    user_id=int(row["id"]),
+                    session_id=int(row["session_id"]),
+                    client_ip=self._client_ip(),
+                )
                 conn.execute("DELETE FROM sessions WHERE id = ?", (int(row["session_id"]),))
                 return None
 
@@ -812,11 +850,22 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
                 seed_default_categories(conn, user_id)
         except sqlite3.IntegrityError:
+            log_security_event(
+                "signup_conflict",
+                email_hash=hash_identifier(payload["email"]),
+                client_ip=self._client_ip(),
+            )
             return self._send_json({"error": "An account with that email already exists"}, status=409)
 
         if user is None:
             return self._send_json({"error": "Unable to create account"}, status=500)
 
+        log_security_event(
+            "signup_succeeded",
+            user_id=int(user["id"]),
+            email_hash=hash_identifier(payload["email"]),
+            client_ip=self._client_ip(),
+        )
         csrf_token = secrets.token_urlsafe(24)
         self._send_json(
             {"user": serialize_user(user)},
@@ -839,6 +888,12 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             cleanup_login_rate_limits(conn)
             limited, retry_after = check_login_rate_limit(conn, limit_key)
             if limited:
+                log_security_event(
+                    "login_rate_limited",
+                    email_hash=hash_identifier(payload["email"]),
+                    client_ip=self._client_ip(),
+                    retry_after_seconds=retry_after,
+                )
                 return self._send_json(
                     {"error": "Too many login attempts. Try again later."},
                     status=429,
@@ -849,17 +904,34 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             if user is None or not verify_password(payload["password"], str(user["password_hash"])):
                 lock_seconds = register_login_failure(conn, limit_key)
                 if lock_seconds > 0:
+                    log_security_event(
+                        "login_lockout_started",
+                        email_hash=hash_identifier(payload["email"]),
+                        client_ip=self._client_ip(),
+                        lockout_seconds=lock_seconds,
+                    )
                     return self._send_json(
                         {"error": "Too many login attempts. Try again later."},
                         status=429,
                         extra_headers=[("Retry-After", str(lock_seconds))],
                     )
+                log_security_event(
+                    "login_failed",
+                    email_hash=hash_identifier(payload["email"]),
+                    client_ip=self._client_ip(),
+                )
                 return self._send_json({"error": "Invalid email or password"}, status=401)
 
             seed_default_categories(conn, int(user["id"]))
             token = issue_session(conn, int(user["id"]))
             clear_login_rate_limit(conn, limit_key)
 
+        log_security_event(
+            "login_succeeded",
+            user_id=int(user["id"]),
+            email_hash=hash_identifier(payload["email"]),
+            client_ip=self._client_ip(),
+        )
         csrf_token = secrets.token_urlsafe(24)
         self._send_json(
             {"user": serialize_user(user)},
@@ -875,6 +947,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             token_hash = hash_session_token(token)
             with self._db() as conn:
                 conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+            log_security_event("logout_succeeded", client_ip=self._client_ip())
 
         self._send_json(
             {"loggedOut": True},
@@ -1159,6 +1232,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     init_db()
     port = int(os.environ.get("PORT", "8000"))
     host = os.environ.get("HOST", "127.0.0.1")

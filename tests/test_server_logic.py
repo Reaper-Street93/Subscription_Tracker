@@ -295,6 +295,25 @@ class ServerLogicTests(unittest.TestCase):
         self.assertIn("script-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
 
+    def test_hash_identifier_is_deterministic(self) -> None:
+        value1 = server.hash_identifier("User@Example.com")
+        value2 = server.hash_identifier(" user@example.com ")
+        self.assertEqual(value1, value2)
+        self.assertEqual(len(value1), 16)
+
+    def test_build_security_event_payload(self) -> None:
+        payload = server.build_security_event(
+            "login_failed",
+            email_hash="abc123",
+            retry_after_seconds=30,
+            ignored_none=None,
+        )
+        self.assertEqual(payload["event"], "login_failed")
+        self.assertEqual(payload["email_hash"], "abc123")
+        self.assertEqual(payload["retry_after_seconds"], 30)
+        self.assertIn("timestamp", payload)
+        self.assertNotIn("ignored_none", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

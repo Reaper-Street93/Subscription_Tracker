@@ -77,6 +77,7 @@ From project root:
 - Sessions are rotated on login (prior sessions for the same user are invalidated).
 - Session duration defaults to `30` days in local/dev and `7` days in production (override with `SESSION_DURATION_DAYS`).
 - Optional session idle timeout can be enforced via `SESSION_IDLE_TIMEOUT_MINUTES`.
+- Structured security events are logged (JSON) for signup conflicts/success, login failures/lockouts/success, CSRF failures, idle session expiry, and logout.
 
 ## API Endpoints
 - `GET /api/health`
