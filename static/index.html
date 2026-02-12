@@ -3,27 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Subscription Compass</title>
+    <title>SubTracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="page-glow page-glow-left"></div>
-    <div class="page-glow page-glow-right"></div>
+    <nav class="site-nav" aria-label="Main navigation">
+      <div class="nav-inner">
+        <a class="brand" href="/">SubTracker</a>
+        <div class="nav-links">
+          <a href="/" class="active" aria-current="page">Dashboard</a>
+          <a href="/about.html">About</a>
+        </div>
+      </div>
+    </nav>
 
     <main class="layout">
       <header class="hero">
         <div class="hero-head">
           <div>
-            <p class="kicker">Budget Visibility</p>
-            <h1>Subscription Compass</h1>
+            <p class="kicker">Simple Subscription Management</p>
+            <h1>SubTracker</h1>
             <p class="hero-copy">
-              Track every recurring bill, see your real monthly spend, and catch payments before they hit.
+              Track recurring bills in one place, spot overspending quickly, and keep upcoming payments easy to see.
             </p>
           </div>
           <div id="userSession" class="user-session" hidden>
@@ -36,7 +40,7 @@
       <section id="authPanel" class="panel auth-panel">
         <div class="panel-header">
           <h2 id="authTitle">Sign In</h2>
-          <span class="subtle">Your private subscription workspace</span>
+          <span class="subtle">Secure access to your subscriptions</span>
         </div>
         <div class="auth-toggle">
           <button id="authLoginModeBtn" class="secondary-btn mode-btn active" type="button">Login</button>
@@ -96,7 +100,7 @@
               <div class="category-manager">
                 <div class="panel-header category-manager-header">
                   <h3>Manage Categories</h3>
-                  <span class="subtle">Used in forms and filters</span>
+                  <span class="subtle">Quick add or remove</span>
                 </div>
                 <div class="category-create">
                   <input
@@ -141,8 +145,8 @@
 
           <article class="panel chart-panel">
             <div class="panel-header">
-              <h2>Monthly Spend by Category</h2>
-              <span class="subtle">Pie chart</span>
+              <h2>Spend by Category</h2>
+              <span class="subtle">Monthly view</span>
             </div>
             <div class="chart-wrap">
               <div id="pieChart" class="pie-chart" aria-label="Spending by category"></div>
@@ -158,14 +162,14 @@
               <span id="subscriptionCount" class="subtle">0 items</span>
             </div>
             <div class="filters-row">
-              <input id="searchInput" type="search" placeholder="Search by subscription name" />
+              <input id="searchInput" type="search" placeholder="Search subscription" />
               <select id="categoryFilterSelect" aria-label="Filter by category">
                 <option value="">All categories</option>
               </select>
               <select id="sortSelect" aria-label="Sort subscriptions">
                 <option value="due_soon">Sort: Due Soon</option>
-                <option value="cost_desc">Sort: Monthly Cost High to Low</option>
-                <option value="cost_asc">Sort: Monthly Cost Low to High</option>
+                <option value="cost_desc">Sort: Cost High to Low</option>
+                <option value="cost_asc">Sort: Cost Low to High</option>
                 <option value="name_asc">Sort: Name A to Z</option>
                 <option value="newest">Sort: Newest Added</option>
               </select>

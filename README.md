@@ -1,4 +1,4 @@
-# Subscription Compass
+# SubTracker
 
 A full-stack subscription tracker built with a Python backend and a vanilla HTML/CSS/JS frontend.
 
@@ -22,6 +22,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 ## Project Structure
 - `server.py`: API server, SQLite schema, cost/reminder calculation logic
 - `static/index.html`: App layout and dashboard structure
+- `static/about.html`: About page with creator information
 - `static/styles.css`: Visual design, responsive layout, motion, and theme
 - `static/app.js`: API integration and dynamic rendering
 - `render.yaml`: one-click Render deployment blueprint

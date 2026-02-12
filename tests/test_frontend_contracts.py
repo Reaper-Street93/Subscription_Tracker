@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX_HTML = ROOT / "static" / "index.html"
+ABOUT_HTML = ROOT / "static" / "about.html"
 APP_JS = ROOT / "static" / "app.js"
 STYLES_CSS = ROOT / "static" / "styles.css"
 
@@ -11,6 +12,7 @@ class FrontendContractsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.index = INDEX_HTML.read_text(encoding="utf-8")
+        cls.about = ABOUT_HTML.read_text(encoding="utf-8")
         cls.app_js = APP_JS.read_text(encoding="utf-8")
         cls.styles = STYLES_CSS.read_text(encoding="utf-8")
 
@@ -61,6 +63,12 @@ class FrontendContractsTests(unittest.TestCase):
         for selector in selectors:
             with self.subTest(selector=selector):
                 self.assertIn(selector, self.styles)
+
+    def test_about_page_has_creator_section(self) -> None:
+        self.assertIn("About SubTracker", self.about)
+        self.assertIn("Seb Barclay", self.about)
+        self.assertIn("About Me", self.about)
+        self.assertIn("/about.html", self.about)
 
 
 if __name__ == "__main__":
