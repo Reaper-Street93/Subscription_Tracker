@@ -3,6 +3,7 @@
 A full-stack subscription tracker built with a Python backend and a vanilla HTML/CSS/JS frontend.
 
 ## Features
+- User authentication (sign up, sign in, sign out)
 - Add subscription
 - Edit subscription
 - Monthly cost auto-calculated (monthly, quarterly, yearly billing)
@@ -53,6 +54,10 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 
 ## API Endpoints
 - `GET /api/health`
+- `GET /api/auth/me`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
 - `GET /api/subscriptions`
 - `POST /api/subscriptions`
 - `PUT /api/subscriptions/:id`
@@ -60,7 +65,20 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 - `GET /api/reminders`
 
 ## Data Model
+Each user stores:
+- `name`
+- `email`
+- `password_hash`
+- `created_at`
+
+Each session stores:
+- `user_id`
+- `token_hash`
+- `expires_at`
+- `created_at`
+
 Each subscription stores:
+- `user_id`
 - `name`
 - `category`
 - `amount`

@@ -18,114 +18,158 @@
 
     <main class="layout">
       <header class="hero">
-        <p class="kicker">Budget Visibility</p>
-        <h1>Subscription Compass</h1>
-        <p class="hero-copy">
-          Track every recurring bill, see your real monthly spend, and catch payments before they hit.
-        </p>
+        <div class="hero-head">
+          <div>
+            <p class="kicker">Budget Visibility</p>
+            <h1>Subscription Compass</h1>
+            <p class="hero-copy">
+              Track every recurring bill, see your real monthly spend, and catch payments before they hit.
+            </p>
+          </div>
+          <div id="userSession" class="user-session" hidden>
+            <p id="userBadge" class="subtle"></p>
+            <button id="logoutBtn" class="secondary-btn" type="button">Logout</button>
+          </div>
+        </div>
       </header>
 
-      <section class="stats-grid" aria-label="Monthly summary">
-        <article class="stat-card">
-          <h2>Total Monthly Spend</h2>
-          <p id="totalMonthlySpend" class="stat-value">$0.00</p>
-        </article>
-        <article class="stat-card">
-          <h2>Next Payment</h2>
-          <p id="nextReminder" class="stat-value">No reminders</p>
-        </article>
+      <section id="authPanel" class="panel auth-panel">
+        <div class="panel-header">
+          <h2 id="authTitle">Sign In</h2>
+          <span class="subtle">Your private subscription workspace</span>
+        </div>
+        <div class="auth-toggle">
+          <button id="authLoginModeBtn" class="secondary-btn mode-btn active" type="button">Login</button>
+          <button id="authSignupModeBtn" class="secondary-btn mode-btn" type="button">Sign Up</button>
+        </div>
+        <form id="authForm" novalidate>
+          <label id="authNameField" hidden>
+            Full Name
+            <input type="text" name="authName" placeholder="Jane Doe" autocomplete="name" />
+          </label>
+          <label>
+            Email
+            <input type="email" name="authEmail" placeholder="you@example.com" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              name="authPassword"
+              minlength="8"
+              placeholder="At least 8 characters"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+          <button id="authSubmitBtn" type="submit">Sign In</button>
+          <p id="authMessage" class="form-message" role="status" aria-live="polite"></p>
+        </form>
       </section>
 
-      <section class="content-grid">
-        <article class="panel form-panel">
-          <h2 id="formTitle">Add Subscription</h2>
-          <form id="subscriptionForm" novalidate>
-            <label>
-              Name
-              <input type="text" name="name" placeholder="Netflix" required />
-            </label>
+      <div id="appShell" hidden>
+        <section class="stats-grid" aria-label="Monthly summary">
+          <article class="stat-card">
+            <h2>Total Monthly Spend</h2>
+            <p id="totalMonthlySpend" class="stat-value">$0.00</p>
+          </article>
+          <article class="stat-card">
+            <h2>Next Payment</h2>
+            <p id="nextReminder" class="stat-value">No reminders</p>
+          </article>
+        </section>
 
-            <label>
-              Category
-              <input type="text" name="category" placeholder="Streaming" required />
-            </label>
+        <section class="content-grid">
+          <article class="panel form-panel">
+            <h2 id="formTitle">Add Subscription</h2>
+            <form id="subscriptionForm" novalidate>
+              <label>
+                Name
+                <input type="text" name="name" placeholder="Netflix" required />
+              </label>
 
-            <label>
-              Billing Amount (USD)
-              <input type="number" name="amount" min="0.01" step="0.01" placeholder="15.99" required />
-            </label>
+              <label>
+                Category
+                <input type="text" name="category" placeholder="Streaming" required />
+              </label>
 
-            <label>
-              Billing Cycle
-              <select name="billingCycle" required>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-            </label>
+              <label>
+                Billing Amount (USD)
+                <input type="number" name="amount" min="0.01" step="0.01" placeholder="15.99" required />
+              </label>
 
-            <label>
-              Next Payment Date
-              <input type="date" name="nextPaymentDate" required />
-            </label>
+              <label>
+                Billing Cycle
+                <select name="billingCycle" required>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </label>
 
-            <div class="form-actions">
-              <button id="submitBtn" type="submit">Save Subscription</button>
-              <button id="cancelEditBtn" class="secondary-btn" type="button" hidden>Cancel Edit</button>
+              <label>
+                Next Payment Date
+                <input type="date" name="nextPaymentDate" required />
+              </label>
+
+              <div class="form-actions">
+                <button id="submitBtn" type="submit">Save Subscription</button>
+                <button id="cancelEditBtn" class="secondary-btn" type="button" hidden>Cancel Edit</button>
+              </div>
+              <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
+            </form>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="panel-header">
+              <h2>Monthly Spend by Category</h2>
+              <span class="subtle">Pie chart</span>
             </div>
-            <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
-          </form>
-        </article>
+            <div class="chart-wrap">
+              <div id="pieChart" class="pie-chart" aria-label="Spending by category"></div>
+              <ul id="pieLegend" class="pie-legend"></ul>
+            </div>
+          </article>
+        </section>
 
-        <article class="panel chart-panel">
-          <div class="panel-header">
-            <h2>Monthly Spend by Category</h2>
-            <span class="subtle">Pie chart</span>
-          </div>
-          <div class="chart-wrap">
-            <div id="pieChart" class="pie-chart" aria-label="Spending by category"></div>
-            <ul id="pieLegend" class="pie-legend"></ul>
-          </div>
-        </article>
-      </section>
+        <section class="content-grid second-row">
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Subscriptions</h2>
+              <span id="subscriptionCount" class="subtle">0 items</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Cycle</th>
+                    <th>Amount</th>
+                    <th>Monthly Cost</th>
+                    <th>Next Payment</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="subscriptionsBody"></tbody>
+              </table>
+              <p id="emptySubscriptions" class="empty-state">No subscriptions yet. Add your first one above.</p>
+            </div>
+          </article>
 
-      <section class="content-grid second-row">
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Subscriptions</h2>
-            <span id="subscriptionCount" class="subtle">0 items</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Cycle</th>
-                  <th>Amount</th>
-                  <th>Monthly Cost</th>
-                  <th>Next Payment</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="subscriptionsBody"></tbody>
-            </table>
-            <p id="emptySubscriptions" class="empty-state">No subscriptions yet. Add your first one above.</p>
-          </div>
-        </article>
-
-        <article class="panel reminder-panel">
-          <div class="panel-header">
-            <h2>Upcoming Reminders</h2>
-            <span class="subtle">Next 30 days</span>
-          </div>
-          <div class="reminder-controls">
-            <button id="enableNotificationsBtn" class="secondary-btn" type="button">Enable Browser Alerts</button>
-            <p id="notificationStatus" class="notification-status">Notifications are off.</p>
-          </div>
-          <ul id="remindersList" class="reminders-list"></ul>
-          <p id="emptyReminders" class="empty-state">No reminders yet.</p>
-        </article>
-      </section>
+          <article class="panel reminder-panel">
+            <div class="panel-header">
+              <h2>Upcoming Reminders</h2>
+              <span class="subtle">Next 30 days</span>
+            </div>
+            <div class="reminder-controls">
+              <button id="enableNotificationsBtn" class="secondary-btn" type="button">Enable Browser Alerts</button>
+              <p id="notificationStatus" class="notification-status">Notifications are off.</p>
+            </div>
+            <ul id="remindersList" class="reminders-list"></ul>
+            <p id="emptyReminders" class="empty-state">No reminders yet.</p>
+          </article>
+        </section>
+      </div>
     </main>
 
     <script src="/app.js" defer></script>

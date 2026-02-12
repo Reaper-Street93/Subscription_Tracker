@@ -1,3 +1,16 @@
+const authPanel = document.getElementById("authPanel");
+const appShell = document.getElementById("appShell");
+const authForm = document.getElementById("authForm");
+const authTitle = document.getElementById("authTitle");
+const authNameField = document.getElementById("authNameField");
+const authSubmitBtn = document.getElementById("authSubmitBtn");
+const authLoginModeBtn = document.getElementById("authLoginModeBtn");
+const authSignupModeBtn = document.getElementById("authSignupModeBtn");
+const authMessage = document.getElementById("authMessage");
+const userSession = document.getElementById("userSession");
+const userBadge = document.getElementById("userBadge");
+const logoutBtn = document.getElementById("logoutBtn");
+
 const form = document.getElementById("subscriptionForm");
 const formMessage = document.getElementById("formMessage");
 const formTitle = document.getElementById("formTitle");
@@ -17,6 +30,8 @@ const enableNotificationsBtn = document.getElementById("enableNotificationsBtn")
 const notificationStatusEl = document.getElementById("notificationStatus");
 
 let editingId = null;
+let authMode = "login";
+let currentUser = null;
 
 const pieColors = [
   "#ff8a3d",
@@ -34,12 +49,20 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 
-function setFormMessage(message, type = "") {
-  formMessage.textContent = message;
-  formMessage.classList.remove("error", "success");
+function setMessage(targetEl, message, type = "") {
+  targetEl.textContent = message;
+  targetEl.classList.remove("error", "success");
   if (type) {
-    formMessage.classList.add(type);
+    targetEl.classList.add(type);
   }
+}
+
+function setFormMessage(message, type = "") {
+  setMessage(formMessage, message, type);
+}
+
+function setAuthMessage(message, type = "") {
+  setMessage(authMessage, message, type);
 }
 
 function toFriendlyCycle(cycle) {
@@ -58,30 +81,49 @@ function setDefaultDate() {
   nextPaymentInput.valueAsDate = new Date();
 }
 
-function setFormMode(mode, sub = null) {
-  if (mode === "edit" && sub) {
-    editingId = sub.id;
-    formTitle.textContent = "Edit Subscription";
-    submitBtn.textContent = "Update Subscription";
-    cancelEditBtn.hidden = false;
-    form.elements.name.value = sub.name;
-    form.elements.category.value = sub.category;
-    form.elements.amount.value = String(sub.amount);
-    form.elements.billingCycle.value = sub.billingCycle;
-    form.elements.nextPaymentDate.value = sub.initialPaymentDate;
+function setAuthMode(mode) {
+  authMode = mode;
+  const isSignup = mode === "signup";
+
+  authTitle.textContent = isSignup ? "Create Account" : "Sign In";
+  authSubmitBtn.textContent = isSignup ? "Create Account" : "Sign In";
+  authNameField.hidden = !isSignup;
+
+  authLoginModeBtn.classList.toggle("active", !isSignup);
+  authSignupModeBtn.classList.toggle("active", isSignup);
+
+  const passwordInput = authForm.elements.authPassword;
+  passwordInput.autocomplete = isSignup ? "new-password" : "current-password";
+}
+
+function setAuthenticatedUser(user) {
+  currentUser = user;
+  const isLoggedIn = Boolean(user);
+
+  authPanel.hidden = isLoggedIn;
+  appShell.hidden = !isLoggedIn;
+  userSession.hidden = !isLoggedIn;
+
+  if (isLoggedIn) {
+    userBadge.textContent = `${user.name} • ${user.email}`;
+    setAuthMessage("");
+    setDefaultDate();
+    updateNotificationStatus();
     return;
   }
 
-  editingId = null;
-  formTitle.textContent = "Add Subscription";
-  submitBtn.textContent = "Save Subscription";
-  cancelEditBtn.hidden = true;
-  form.reset();
-  setDefaultDate();
+  userBadge.textContent = "";
+  setFormMode("create");
+  renderSummary(0, null);
+  renderSubscriptions([]);
+  renderReminders([]);
+  renderPieChart([]);
+  updateNotificationStatus();
 }
 
 async function apiRequest(url, options = {}) {
   const response = await fetch(url, {
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),
@@ -89,15 +131,36 @@ async function apiRequest(url, options = {}) {
     ...options,
   });
 
-  const body = await response.json();
+  let body = {};
+  try {
+    body = await response.json();
+  } catch (_error) {
+    body = {};
+  }
+
   if (!response.ok) {
-    throw new Error(body.error || "Something went wrong");
+    const err = new Error(body.error || "Something went wrong");
+    err.status = response.status;
+    throw err;
   }
 
   return body;
 }
 
+function handleUnauthorized(error) {
+  if (error && error.status === 401) {
+    setAuthenticatedUser(null);
+    setAuthMessage("Please sign in to continue.", "error");
+    return true;
+  }
+  return false;
+}
+
 async function loadDashboard() {
+  if (!currentUser) {
+    return;
+  }
+
   try {
     const [subscriptionsData, remindersData] = await Promise.all([
       apiRequest("/api/subscriptions"),
@@ -110,6 +173,9 @@ async function loadDashboard() {
     renderPieChart(subscriptionsData.spendingByCategory);
     maybeNotifyDueSoon(remindersData.reminders);
   } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
     setFormMessage(error.message, "error");
   }
 }
@@ -179,6 +245,7 @@ function renderSubscriptions(subscriptions) {
     deleteBtn.type = "button";
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", () => deleteSubscription(sub.id));
+
     actionGroup.append(editBtn, deleteBtn);
     actionCell.appendChild(actionGroup);
 
@@ -285,6 +352,13 @@ function updateNotificationStatus() {
     return;
   }
 
+  if (!currentUser) {
+    enableNotificationsBtn.disabled = true;
+    enableNotificationsBtn.textContent = "Sign In To Enable Alerts";
+    notificationStatusEl.textContent = "Sign in to manage reminder notifications.";
+    return;
+  }
+
   if (Notification.permission === "granted") {
     enableNotificationsBtn.disabled = true;
     enableNotificationsBtn.textContent = "Browser Alerts Enabled";
@@ -329,6 +403,28 @@ function maybeNotifyDueSoon(reminders) {
   }
 }
 
+function setFormMode(mode, sub = null) {
+  if (mode === "edit" && sub) {
+    editingId = sub.id;
+    formTitle.textContent = "Edit Subscription";
+    submitBtn.textContent = "Update Subscription";
+    cancelEditBtn.hidden = false;
+    form.elements.name.value = sub.name;
+    form.elements.category.value = sub.category;
+    form.elements.amount.value = String(sub.amount);
+    form.elements.billingCycle.value = sub.billingCycle;
+    form.elements.nextPaymentDate.value = sub.initialPaymentDate;
+    return;
+  }
+
+  editingId = null;
+  formTitle.textContent = "Add Subscription";
+  submitBtn.textContent = "Save Subscription";
+  cancelEditBtn.hidden = true;
+  form.reset();
+  setDefaultDate();
+}
+
 async function deleteSubscription(id) {
   try {
     await apiRequest(`/api/subscriptions/${id}`, { method: "DELETE" });
@@ -338,9 +434,83 @@ async function deleteSubscription(id) {
     await loadDashboard();
     setFormMessage("Subscription removed.", "success");
   } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
     setFormMessage(error.message, "error");
   }
 }
+
+async function checkSession() {
+  try {
+    const data = await apiRequest("/api/auth/me");
+    if (data.user) {
+      setAuthenticatedUser(data.user);
+      await loadDashboard();
+      return;
+    }
+    setAuthenticatedUser(null);
+  } catch (_error) {
+    setAuthenticatedUser(null);
+  }
+}
+
+authLoginModeBtn.addEventListener("click", () => {
+  setAuthMode("login");
+  setAuthMessage("");
+});
+
+authSignupModeBtn.addEventListener("click", () => {
+  setAuthMode("signup");
+  setAuthMessage("");
+});
+
+authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const wasSignup = authMode === "signup";
+  setAuthMessage(wasSignup ? "Creating account..." : "Signing in...");
+
+  const formData = new FormData(authForm);
+  const payload = {
+    email: String(formData.get("authEmail") || "").trim(),
+    password: String(formData.get("authPassword") || ""),
+  };
+
+  if (authMode === "signup") {
+    payload.name = String(formData.get("authName") || "").trim();
+  }
+
+  const endpoint = wasSignup ? "/api/auth/signup" : "/api/auth/login";
+
+  try {
+    const data = await apiRequest(endpoint, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    setAuthenticatedUser(data.user);
+    authForm.reset();
+    setAuthMode("login");
+    setAuthMessage(wasSignup ? "Account created." : "Signed in.", "success");
+    setFormMessage("");
+    await loadDashboard();
+  } catch (error) {
+    setAuthMessage(error.message, "error");
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await apiRequest("/api/auth/logout", { method: "POST", body: JSON.stringify({}) });
+  } catch (_error) {
+    // ignore logout transport issues and clear local UI state anyway
+  }
+
+  setAuthenticatedUser(null);
+  setAuthMode("login");
+  setAuthMessage("Signed out.", "success");
+  setFormMessage("");
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -368,6 +538,9 @@ form.addEventListener("submit", async (event) => {
     setFormMessage(isEditing ? "Subscription updated." : "Subscription added.", "success");
     await loadDashboard();
   } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
     setFormMessage(error.message, "error");
   }
 });
@@ -380,6 +553,12 @@ cancelEditBtn.addEventListener("click", () => {
 enableNotificationsBtn.addEventListener("click", async () => {
   if (!notificationsSupported()) {
     setFormMessage("This browser does not support notifications.", "error");
+    updateNotificationStatus();
+    return;
+  }
+
+  if (!currentUser) {
+    setAuthMessage("Sign in before enabling notifications.", "error");
     updateNotificationStatus();
     return;
   }
@@ -400,6 +579,7 @@ enableNotificationsBtn.addEventListener("click", async () => {
   await loadDashboard();
 });
 
+setAuthMode("login");
 setDefaultDate();
 updateNotificationStatus();
-loadDashboard();
+checkSession();

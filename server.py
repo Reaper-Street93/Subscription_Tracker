@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -12,6 +16,10 @@ from urllib.parse import urlparse
 DB_PATH = Path(__file__).with_name("subscriptions.db")
 STATIC_DIR = Path(__file__).with_name("static")
 DATE_FORMAT = "%Y-%m-%d"
+SESSION_COOKIE_NAME = "subtracker_session"
+SESSION_DURATION_DAYS = 30
+PASSWORD_HASH_ITERATIONS = 200_000
+
 CYCLE_TO_MONTHS = {
     "monthly": 1,
     "quarterly": 3,
@@ -19,21 +27,61 @@ CYCLE_TO_MONTHS = {
 }
 
 
+def utc_now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds")
+
+
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
                 name TEXT NOT NULL,
                 category TEXT NOT NULL,
                 amount REAL NOT NULL,
                 billing_cycle TEXT NOT NULL,
                 next_payment_date TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """
         )
+        ensure_subscription_user_column(conn)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)")
+
+
+def ensure_subscription_user_column(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(subscriptions)").fetchall()
+    column_names = {column[1] for column in columns}
+    if "user_id" not in column_names:
+        conn.execute("ALTER TABLE subscriptions ADD COLUMN user_id INTEGER")
 
 
 def add_months(source_date: date, months: int) -> date:
@@ -62,6 +110,37 @@ def next_due_date(initial_date: date, billing_cycle: str, today: date | None = N
         current_due = add_months(current_due, months)
 
     return current_due
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    if salt is None:
+        salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
+    return f"{salt.hex()}:{digest.hex()}"
+
+
+def verify_password(password: str, encoded_hash: str) -> bool:
+    try:
+        salt_hex, digest_hex = encoded_hash.split(":", maxsplit=1)
+    except ValueError:
+        return False
+
+    salt = bytes.fromhex(salt_hex)
+    expected = bytes.fromhex(digest_hex)
+    candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
+    return hmac.compare_digest(candidate, expected)
+
+
+def hash_session_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def serialize_user(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+    }
 
 
 def serialize_subscription(row: sqlite3.Row, today: date | None = None) -> dict[str, object]:
@@ -117,15 +196,56 @@ def parse_subscription_payload(body: dict[str, object]) -> tuple[dict[str, objec
     )
 
 
+def parse_auth_payload(body: dict[str, object], require_name: bool) -> tuple[dict[str, str] | None, str | None]:
+    name = str(body.get("name", "")).strip()
+    email = str(body.get("email", "")).strip().lower()
+    password = str(body.get("password", ""))
+
+    if require_name and len(name) < 2:
+        return None, "Name must be at least 2 characters"
+    if "@" not in email or "." not in email:
+        return None, "A valid email is required"
+    if len(password) < 8:
+        return None, "Password must be at least 8 characters"
+
+    if not require_name and not name:
+        name = ""
+
+    return {"name": name, "email": email, "password": password}, None
+
+
+def issue_session(conn: sqlite3.Connection, user_id: int) -> str:
+    conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (utc_now_iso(),))
+    token = secrets.token_urlsafe(32)
+    token_hash = hash_session_token(token)
+    expires_at = (datetime.utcnow() + timedelta(days=SESSION_DURATION_DAYS)).isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO sessions (user_id, token_hash, expires_at, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (user_id, token_hash, expires_at, utc_now_iso()),
+    )
+    return token
+
+
 class SubscriptionHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
-    def _send_json(self, payload: dict[str, object], status: int = 200) -> None:
+    def _send_json(
+        self,
+        payload: dict[str, object],
+        status: int = 200,
+        extra_headers: list[tuple[str, str]] | None = None,
+    ) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        if extra_headers:
+            for key, value in extra_headers:
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -143,7 +263,57 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
     def _db(self) -> sqlite3.Connection:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    def _session_token_from_cookie(self) -> str | None:
+        cookie_header = self.headers.get("Cookie")
+        if not cookie_header:
+            return None
+
+        cookie = SimpleCookie()
+        cookie.load(cookie_header)
+        morsel = cookie.get(SESSION_COOKIE_NAME)
+        return morsel.value if morsel else None
+
+    def _current_user(self) -> sqlite3.Row | None:
+        token = self._session_token_from_cookie()
+        if not token:
+            return None
+
+        token_hash = hash_session_token(token)
+        now = utc_now_iso()
+        with self._db() as conn:
+            row = conn.execute(
+                """
+                SELECT users.*
+                FROM sessions
+                JOIN users ON users.id = sessions.user_id
+                WHERE sessions.token_hash = ? AND sessions.expires_at > ?
+                """,
+                (token_hash, now),
+            ).fetchone()
+        return row
+
+    def _require_auth_user(self) -> sqlite3.Row | None:
+        user = self._current_user()
+        if user is None:
+            self._send_json({"error": "Authentication required"}, status=401)
+            return None
+        return user
+
+    def _session_cookie_header(self, token: str) -> tuple[str, str]:
+        max_age = SESSION_DURATION_DAYS * 24 * 60 * 60
+        return (
+            "Set-Cookie",
+            f"{SESSION_COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}",
+        )
+
+    def _clear_session_cookie_header(self) -> tuple[str, str]:
+        return (
+            "Set-Cookie",
+            f"{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        )
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -152,6 +322,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._get_subscriptions()
         if parsed.path == "/api/reminders":
             return self._get_reminders()
+        if parsed.path == "/api/auth/me":
+            return self._get_auth_me()
         if parsed.path == "/api/health":
             return self._send_json({"ok": True})
 
@@ -164,6 +336,12 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/subscriptions":
             return self._create_subscription()
+        if parsed.path == "/api/auth/signup":
+            return self._auth_signup()
+        if parsed.path == "/api/auth/login":
+            return self._auth_login()
+        if parsed.path == "/api/auth/logout":
+            return self._auth_logout()
 
         return self._send_json({"error": "Not found"}, status=404)
 
@@ -193,10 +371,92 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
 
         return self._send_json({"error": "Not found"}, status=404)
 
+    def _get_auth_me(self) -> None:
+        user = self._current_user()
+        if user is None:
+            return self._send_json({"user": None})
+
+        self._send_json({"user": serialize_user(user)})
+
+    def _auth_signup(self) -> None:
+        try:
+            body = self._read_json()
+        except json.JSONDecodeError:
+            return self._send_json({"error": "Invalid JSON body"}, status=400)
+
+        payload, error = parse_auth_payload(body, require_name=True)
+        if error or payload is None:
+            return self._send_json({"error": error or "Invalid payload"}, status=400)
+
+        password_hash = hash_password(payload["password"])
+        created_at = utc_now_iso()
+
+        try:
+            with self._db() as conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO users (name, email, password_hash, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (payload["name"], payload["email"], password_hash, created_at),
+                )
+                user_id = int(cursor.lastrowid)
+                token = issue_session(conn, user_id)
+                user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        except sqlite3.IntegrityError:
+            return self._send_json({"error": "An account with that email already exists"}, status=409)
+
+        if user is None:
+            return self._send_json({"error": "Unable to create account"}, status=500)
+
+        self._send_json(
+            {"user": serialize_user(user)},
+            status=201,
+            extra_headers=[self._session_cookie_header(token)],
+        )
+
+    def _auth_login(self) -> None:
+        try:
+            body = self._read_json()
+        except json.JSONDecodeError:
+            return self._send_json({"error": "Invalid JSON body"}, status=400)
+
+        payload, error = parse_auth_payload(body, require_name=False)
+        if error or payload is None:
+            return self._send_json({"error": error or "Invalid payload"}, status=400)
+
+        with self._db() as conn:
+            user = conn.execute("SELECT * FROM users WHERE email = ?", (payload["email"],)).fetchone()
+            if user is None or not verify_password(payload["password"], str(user["password_hash"])):
+                return self._send_json({"error": "Invalid email or password"}, status=401)
+
+            token = issue_session(conn, int(user["id"]))
+
+        self._send_json(
+            {"user": serialize_user(user)},
+            extra_headers=[self._session_cookie_header(token)],
+        )
+
+    def _auth_logout(self) -> None:
+        token = self._session_token_from_cookie()
+        if token:
+            token_hash = hash_session_token(token)
+            with self._db() as conn:
+                conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+        self._send_json({"loggedOut": True}, extra_headers=[self._clear_session_cookie_header()])
+
     def _get_subscriptions(self) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
         today = date.today()
         with self._db() as conn:
-            rows = conn.execute("SELECT * FROM subscriptions ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC",
+                (int(user["id"]),),
+            ).fetchall()
 
         subscriptions = [serialize_subscription(row, today=today) for row in rows]
         total_monthly = round(sum(float(item["monthlyCost"]) for item in subscriptions), 2)
@@ -222,9 +482,16 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         )
 
     def _get_reminders(self) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
         today = date.today()
         with self._db() as conn:
-            rows = conn.execute("SELECT * FROM subscriptions ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC",
+                (int(user["id"]),),
+            ).fetchall()
 
         reminders = []
         for row in rows:
@@ -251,6 +518,10 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         )
 
     def _create_subscription(self) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
         try:
             body = self._read_json()
         except json.JSONDecodeError:
@@ -262,14 +533,15 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         if payload is None:
             return self._send_json({"error": "Invalid payload"}, status=400)
 
-        created_at = datetime.utcnow().isoformat(timespec="seconds")
+        created_at = utc_now_iso()
         with self._db() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO subscriptions (name, category, amount, billing_cycle, next_payment_date, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO subscriptions (user_id, name, category, amount, billing_cycle, next_payment_date, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    int(user["id"]),
                     payload["name"],
                     payload["category"],
                     payload["amount"],
@@ -279,7 +551,10 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 ),
             )
             new_id = cursor.lastrowid
-            row = conn.execute("SELECT * FROM subscriptions WHERE id = ?", (new_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM subscriptions WHERE id = ? AND user_id = ?",
+                (new_id, int(user["id"])),
+            ).fetchone()
 
         if row is None:
             return self._send_json({"error": "Unable to create subscription"}, status=500)
@@ -287,6 +562,10 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         self._send_json({"subscription": serialize_subscription(row)}, status=201)
 
     def _update_subscription(self, sub_id: int) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
         try:
             body = self._read_json()
         except json.JSONDecodeError:
@@ -303,7 +582,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 """
                 UPDATE subscriptions
                 SET name = ?, category = ?, amount = ?, billing_cycle = ?, next_payment_date = ?
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
                 (
                     payload["name"],
@@ -312,12 +591,16 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                     payload["billing_cycle"],
                     payload["payment_date"],
                     sub_id,
+                    int(user["id"]),
                 ),
             )
             if cursor.rowcount == 0:
                 return self._send_json({"error": "Subscription not found"}, status=404)
 
-            row = conn.execute("SELECT * FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM subscriptions WHERE id = ? AND user_id = ?",
+                (sub_id, int(user["id"])),
+            ).fetchone()
 
         if row is None:
             return self._send_json({"error": "Subscription not found"}, status=404)
@@ -325,8 +608,15 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         self._send_json({"subscription": serialize_subscription(row)})
 
     def _delete_subscription(self, sub_id: int) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
         with self._db() as conn:
-            cursor = conn.execute("DELETE FROM subscriptions WHERE id = ?", (sub_id,))
+            cursor = conn.execute(
+                "DELETE FROM subscriptions WHERE id = ? AND user_id = ?",
+                (sub_id, int(user["id"])),
+            )
 
         if cursor.rowcount == 0:
             return self._send_json({"error": "Subscription not found"}, status=404)
