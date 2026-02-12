@@ -82,6 +82,41 @@ def serialize_subscription(row: sqlite3.Row, today: date | None = None) -> dict[
     }
 
 
+def parse_subscription_payload(body: dict[str, object]) -> tuple[dict[str, object] | None, str | None]:
+    name = str(body.get("name", "")).strip()
+    category = str(body.get("category", "Other")).strip() or "Other"
+    billing_cycle = str(body.get("billingCycle", "")).strip().lower()
+    payment_date = str(body.get("nextPaymentDate", "")).strip()
+
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return None, "Amount must be a number"
+
+    if not name:
+        return None, "Subscription name is required"
+    if amount <= 0:
+        return None, "Amount must be greater than 0"
+    if billing_cycle not in CYCLE_TO_MONTHS:
+        return None, "Billing cycle must be monthly, quarterly, or yearly"
+
+    try:
+        parse_date(payment_date)
+    except ValueError:
+        return None, "nextPaymentDate must be YYYY-MM-DD"
+
+    return (
+        {
+            "name": name,
+            "category": category,
+            "amount": amount,
+            "billing_cycle": billing_cycle,
+            "payment_date": payment_date,
+        },
+        None,
+    )
+
+
 class SubscriptionHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -142,6 +177,19 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             except ValueError:
                 return self._send_json({"error": "Invalid subscription id"}, status=400)
             return self._delete_subscription(sub_id)
+
+        return self._send_json({"error": "Not found"}, status=404)
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        path_parts = parsed.path.strip("/").split("/")
+
+        if len(path_parts) == 3 and path_parts[0] == "api" and path_parts[1] == "subscriptions":
+            try:
+                sub_id = int(path_parts[2])
+            except ValueError:
+                return self._send_json({"error": "Invalid subscription id"}, status=400)
+            return self._update_subscription(sub_id)
 
         return self._send_json({"error": "Not found"}, status=404)
 
@@ -208,30 +256,11 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._send_json({"error": "Invalid JSON body"}, status=400)
 
-        name = str(body.get("name", "")).strip()
-        category = str(body.get("category", "Other")).strip() or "Other"
-        billing_cycle = str(body.get("billingCycle", "")).strip().lower()
-        payment_date = str(body.get("nextPaymentDate", "")).strip()
-
-        try:
-            amount = float(body.get("amount", 0))
-        except (TypeError, ValueError):
-            return self._send_json({"error": "Amount must be a number"}, status=400)
-
-        if not name:
-            return self._send_json({"error": "Subscription name is required"}, status=400)
-        if amount <= 0:
-            return self._send_json({"error": "Amount must be greater than 0"}, status=400)
-        if billing_cycle not in CYCLE_TO_MONTHS:
-            return self._send_json(
-                {"error": "Billing cycle must be monthly, quarterly, or yearly"},
-                status=400,
-            )
-
-        try:
-            parse_date(payment_date)
-        except ValueError:
-            return self._send_json({"error": "nextPaymentDate must be YYYY-MM-DD"}, status=400)
+        payload, error = parse_subscription_payload(body)
+        if error:
+            return self._send_json({"error": error}, status=400)
+        if payload is None:
+            return self._send_json({"error": "Invalid payload"}, status=400)
 
         created_at = datetime.utcnow().isoformat(timespec="seconds")
         with self._db() as conn:
@@ -240,7 +269,14 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 INSERT INTO subscriptions (name, category, amount, billing_cycle, next_payment_date, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (name, category, amount, billing_cycle, payment_date, created_at),
+                (
+                    payload["name"],
+                    payload["category"],
+                    payload["amount"],
+                    payload["billing_cycle"],
+                    payload["payment_date"],
+                    created_at,
+                ),
             )
             new_id = cursor.lastrowid
             row = conn.execute("SELECT * FROM subscriptions WHERE id = ?", (new_id,)).fetchone()
@@ -249,6 +285,44 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._send_json({"error": "Unable to create subscription"}, status=500)
 
         self._send_json({"subscription": serialize_subscription(row)}, status=201)
+
+    def _update_subscription(self, sub_id: int) -> None:
+        try:
+            body = self._read_json()
+        except json.JSONDecodeError:
+            return self._send_json({"error": "Invalid JSON body"}, status=400)
+
+        payload, error = parse_subscription_payload(body)
+        if error:
+            return self._send_json({"error": error}, status=400)
+        if payload is None:
+            return self._send_json({"error": "Invalid payload"}, status=400)
+
+        with self._db() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE subscriptions
+                SET name = ?, category = ?, amount = ?, billing_cycle = ?, next_payment_date = ?
+                WHERE id = ?
+                """,
+                (
+                    payload["name"],
+                    payload["category"],
+                    payload["amount"],
+                    payload["billing_cycle"],
+                    payload["payment_date"],
+                    sub_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return self._send_json({"error": "Subscription not found"}, status=404)
+
+            row = conn.execute("SELECT * FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
+
+        if row is None:
+            return self._send_json({"error": "Subscription not found"}, status=404)
+
+        self._send_json({"subscription": serialize_subscription(row)})
 
     def _delete_subscription(self, sub_id: int) -> None:
         with self._db() as conn:

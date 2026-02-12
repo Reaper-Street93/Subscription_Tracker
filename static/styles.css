@@ -161,6 +161,12 @@ form {
   gap: 0.8rem;
 }
 
+.form-actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 label {
   display: grid;
   gap: 0.32rem;
@@ -211,6 +217,17 @@ button:active {
   transform: translateY(0);
 }
 
+.secondary-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  filter: none;
+}
+
 .form-message {
   min-height: 1.2em;
   margin: 0;
@@ -249,7 +266,8 @@ th {
 }
 
 td:last-child {
-  text-align: right;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .mini-btn {
@@ -261,9 +279,20 @@ td:last-child {
   padding: 0.35rem 0.52rem;
 }
 
+.action-group {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
 .mini-btn:hover {
   border-color: rgba(255, 107, 107, 0.7);
   background: rgba(255, 107, 107, 0.16);
+}
+
+.mini-btn.edit-btn:hover {
+  border-color: rgba(46, 196, 182, 0.75);
+  background: rgba(46, 196, 182, 0.18);
+  color: #d7fff8;
 }
 
 .empty-state {

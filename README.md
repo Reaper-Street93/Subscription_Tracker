@@ -4,6 +4,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 
 ## Features
 - Add subscription
+- Edit subscription
 - Monthly cost auto-calculated (monthly, quarterly, yearly billing)
 - Total monthly spend summary
 - Upcoming payment reminders

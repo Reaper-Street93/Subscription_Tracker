@@ -1,5 +1,8 @@
 const form = document.getElementById("subscriptionForm");
 const formMessage = document.getElementById("formMessage");
+const formTitle = document.getElementById("formTitle");
+const submitBtn = document.getElementById("submitBtn");
+const cancelEditBtn = document.getElementById("cancelEditBtn");
 const subscriptionsBody = document.getElementById("subscriptionsBody");
 const emptySubscriptions = document.getElementById("emptySubscriptions");
 const remindersList = document.getElementById("remindersList");
@@ -9,6 +12,9 @@ const subscriptionCountEl = document.getElementById("subscriptionCount");
 const nextReminderEl = document.getElementById("nextReminder");
 const pieChartEl = document.getElementById("pieChart");
 const pieLegendEl = document.getElementById("pieLegend");
+const nextPaymentInput = document.querySelector('input[name="nextPaymentDate"]');
+
+let editingId = null;
 
 const pieColors = [
   "#ff8a3d",
@@ -44,6 +50,32 @@ function toFriendlyDate(dateString) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function setDefaultDate() {
+  nextPaymentInput.valueAsDate = new Date();
+}
+
+function setFormMode(mode, sub = null) {
+  if (mode === "edit" && sub) {
+    editingId = sub.id;
+    formTitle.textContent = "Edit Subscription";
+    submitBtn.textContent = "Update Subscription";
+    cancelEditBtn.hidden = false;
+    form.elements.name.value = sub.name;
+    form.elements.category.value = sub.category;
+    form.elements.amount.value = String(sub.amount);
+    form.elements.billingCycle.value = sub.billingCycle;
+    form.elements.nextPaymentDate.value = sub.initialPaymentDate;
+    return;
+  }
+
+  editingId = null;
+  formTitle.textContent = "Add Subscription";
+  submitBtn.textContent = "Save Subscription";
+  cancelEditBtn.hidden = true;
+  form.reset();
+  setDefaultDate();
 }
 
 async function apiRequest(url, options = {}) {
@@ -126,12 +158,26 @@ function renderSubscriptions(subscriptions) {
     dateCell.textContent = toFriendlyDate(sub.nextPaymentDate);
 
     const actionCell = document.createElement("td");
+    const actionGroup = document.createElement("div");
+    actionGroup.className = "action-group";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "mini-btn edit-btn";
+    editBtn.type = "button";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => {
+      setFormMode("edit", sub);
+      setFormMessage(`Editing ${sub.name}.`, "success");
+      form.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "mini-btn";
     deleteBtn.type = "button";
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", () => deleteSubscription(sub.id));
-    actionCell.appendChild(deleteBtn);
+    actionGroup.append(editBtn, deleteBtn);
+    actionCell.appendChild(actionGroup);
 
     row.append(nameCell, cycleCell, amountCell, monthlyCell, dateCell, actionCell);
     subscriptionsBody.appendChild(row);
@@ -227,6 +273,9 @@ function renderPieChart(spendingByCategory) {
 async function deleteSubscription(id) {
   try {
     await apiRequest(`/api/subscriptions/${id}`, { method: "DELETE" });
+    if (editingId === id) {
+      setFormMode("create");
+    }
     await loadDashboard();
     setFormMessage("Subscription removed.", "success");
   } catch (error) {
@@ -248,19 +297,26 @@ form.addEventListener("submit", async (event) => {
   };
 
   try {
-    await apiRequest("/api/subscriptions", {
-      method: "POST",
+    const isEditing = editingId !== null;
+    const endpoint = isEditing ? `/api/subscriptions/${editingId}` : "/api/subscriptions";
+
+    await apiRequest(endpoint, {
+      method: isEditing ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
 
-    form.reset();
-    document.querySelector('input[name="nextPaymentDate"]').valueAsDate = new Date();
-    setFormMessage("Subscription added.", "success");
+    setFormMode("create");
+    setFormMessage(isEditing ? "Subscription updated." : "Subscription added.", "success");
     await loadDashboard();
   } catch (error) {
     setFormMessage(error.message, "error");
   }
 });
 
-document.querySelector('input[name="nextPaymentDate"]').valueAsDate = new Date();
+cancelEditBtn.addEventListener("click", () => {
+  setFormMode("create");
+  setFormMessage("Edit cancelled.");
+});
+
+setDefaultDate();
 loadDashboard();

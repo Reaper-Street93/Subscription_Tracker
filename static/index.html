@@ -38,7 +38,7 @@
 
       <section class="content-grid">
         <article class="panel form-panel">
-          <h2>Add Subscription</h2>
+          <h2 id="formTitle">Add Subscription</h2>
           <form id="subscriptionForm" novalidate>
             <label>
               Name
@@ -69,7 +69,10 @@
               <input type="date" name="nextPaymentDate" required />
             </label>
 
-            <button type="submit">Save Subscription</button>
+            <div class="form-actions">
+              <button id="submitBtn" type="submit">Save Subscription</button>
+              <button id="cancelEditBtn" class="secondary-btn" type="button" hidden>Cancel Edit</button>
+            </div>
             <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
           </form>
         </article>
@@ -101,7 +104,7 @@
                   <th>Amount</th>
                   <th>Monthly Cost</th>
                   <th>Next Payment</th>
-                  <th></th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="subscriptionsBody"></tbody>
