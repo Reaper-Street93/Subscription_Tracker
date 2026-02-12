@@ -82,6 +82,7 @@ class FrontendContractsTests(unittest.TestCase):
             ".chart-mode-toggle",
             ".mode-pill",
             ".auth-hero-title",
+            'input[type="date"]',
         ]
         for selector in selectors:
             with self.subTest(selector=selector):

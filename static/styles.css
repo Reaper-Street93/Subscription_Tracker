@@ -376,6 +376,7 @@ body {
 form {
   display: grid;
   gap: 0.8rem;
+  min-width: 0;
 }
 
 label {
@@ -383,6 +384,7 @@ label {
   gap: 0.32rem;
   font-size: 0.88rem;
   color: var(--text-soft);
+  min-width: 0;
 }
 
 #authNameField[hidden] {
@@ -402,11 +404,23 @@ button {
 input,
 select {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0.62rem 0.7rem;
   background: var(--surface-soft);
   color: var(--text);
+}
+
+input[type="date"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
 }
 
 input:focus,
