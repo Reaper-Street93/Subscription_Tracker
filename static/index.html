@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Subscription Compass</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-glow page-glow-left"></div>
+    <div class="page-glow page-glow-right"></div>
+
+    <main class="layout">
+      <header class="hero">
+        <p class="kicker">Budget Visibility</p>
+        <h1>Subscription Compass</h1>
+        <p class="hero-copy">
+          Track every recurring bill, see your real monthly spend, and catch payments before they hit.
+        </p>
+      </header>
+
+      <section class="stats-grid" aria-label="Monthly summary">
+        <article class="stat-card">
+          <h2>Total Monthly Spend</h2>
+          <p id="totalMonthlySpend" class="stat-value">$0.00</p>
+        </article>
+        <article class="stat-card">
+          <h2>Next Payment</h2>
+          <p id="nextReminder" class="stat-value">No reminders</p>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel form-panel">
+          <h2>Add Subscription</h2>
+          <form id="subscriptionForm" novalidate>
+            <label>
+              Name
+              <input type="text" name="name" placeholder="Netflix" required />
+            </label>
+
+            <label>
+              Category
+              <input type="text" name="category" placeholder="Streaming" required />
+            </label>
+
+            <label>
+              Billing Amount (USD)
+              <input type="number" name="amount" min="0.01" step="0.01" placeholder="15.99" required />
+            </label>
+
+            <label>
+              Billing Cycle
+              <select name="billingCycle" required>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </label>
+
+            <label>
+              Next Payment Date
+              <input type="date" name="nextPaymentDate" required />
+            </label>
+
+            <button type="submit">Save Subscription</button>
+            <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
+          </form>
+        </article>
+
+        <article class="panel chart-panel">
+          <div class="panel-header">
+            <h2>Monthly Spend by Category</h2>
+            <span class="subtle">Pie chart</span>
+          </div>
+          <div class="chart-wrap">
+            <div id="pieChart" class="pie-chart" aria-label="Spending by category"></div>
+            <ul id="pieLegend" class="pie-legend"></ul>
+          </div>
+        </article>
+      </section>
+
+      <section class="content-grid second-row">
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Subscriptions</h2>
+            <span id="subscriptionCount" class="subtle">0 items</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Cycle</th>
+                  <th>Amount</th>
+                  <th>Monthly Cost</th>
+                  <th>Next Payment</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="subscriptionsBody"></tbody>
+            </table>
+            <p id="emptySubscriptions" class="empty-state">No subscriptions yet. Add your first one above.</p>
+          </div>
+        </article>
+
+        <article class="panel reminder-panel">
+          <div class="panel-header">
+            <h2>Upcoming Reminders</h2>
+            <span class="subtle">Next 30 days</span>
+          </div>
+          <ul id="remindersList" class="reminders-list"></ul>
+          <p id="emptyReminders" class="empty-state">No reminders yet.</p>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
