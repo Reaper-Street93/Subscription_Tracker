@@ -128,7 +128,7 @@ class ServerLogicTests(unittest.TestCase):
             token = server.issue_session(conn, int(user_id))
             token_hash = server.hash_session_token(token)
             row = conn.execute(
-                "SELECT token_hash, expires_at FROM sessions WHERE user_id = ?",
+                "SELECT token_hash, expires_at, last_seen_at FROM sessions WHERE user_id = ?",
                 (int(user_id),),
             ).fetchone()
 
@@ -136,6 +136,7 @@ class ServerLogicTests(unittest.TestCase):
         self.assertEqual(row["token_hash"], token_hash)
         expires_at = datetime.fromisoformat(row["expires_at"])
         self.assertGreater(expires_at, datetime.utcnow())
+        self.assertIsNotNone(row["last_seen_at"])
 
     def test_csrf_pair_validation(self) -> None:
         self.assertTrue(server.is_valid_csrf_pair("token-1", "token-1"))
@@ -178,6 +179,50 @@ class ServerLogicTests(unittest.TestCase):
         limited, retry = limiter.is_limited(key, now=now + timedelta(minutes=8))
         self.assertFalse(limited)
         self.assertEqual(retry, 0)
+
+    def test_session_duration_policy(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(server.session_duration_days(), 30)
+
+        with patch.dict("os.environ", {"ENV": "production"}, clear=True):
+            self.assertEqual(server.session_duration_days(), 7)
+
+        with patch.dict("os.environ", {"SESSION_DURATION_DAYS": "14"}, clear=True):
+            self.assertEqual(server.session_duration_days(), 14)
+
+    def test_session_idle_timeout_policy_and_expiry(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(server.session_idle_timeout_minutes(), 0)
+
+        with patch.dict("os.environ", {"SESSION_IDLE_TIMEOUT_MINUTES": "10"}, clear=True):
+            self.assertEqual(server.session_idle_timeout_minutes(), 10)
+            now = datetime(2026, 2, 12, 10, 0, 0)
+            active = (now - timedelta(minutes=5)).isoformat(timespec="seconds")
+            stale = (now - timedelta(minutes=11)).isoformat(timespec="seconds")
+            self.assertFalse(server.is_session_idle_expired(active, now=now))
+            self.assertTrue(server.is_session_idle_expired(stale, now=now))
+
+    def test_issue_session_rotates_existing_sessions_for_user(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                ("Rotate User", "rotate@example.com", server.hash_password("password123"), server.utc_now_iso()),
+            )
+            user_id = conn.execute(
+                "SELECT id FROM users WHERE email = ?", ("rotate@example.com",)
+            ).fetchone()["id"]
+
+            old_token = server.issue_session(conn, int(user_id))
+            new_token = server.issue_session(conn, int(user_id))
+
+            rows = conn.execute(
+                "SELECT token_hash FROM sessions WHERE user_id = ?",
+                (int(user_id),),
+            ).fetchall()
+
+        self.assertEqual(len(rows), 1)
+        self.assertNotEqual(old_token, new_token)
+        self.assertEqual(rows[0]["token_hash"], server.hash_session_token(new_token))
 
     def test_default_security_headers_include_required_policies(self) -> None:
         headers = dict(server.default_security_headers())

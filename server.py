@@ -19,11 +19,13 @@ STATIC_DIR = Path(__file__).with_name("static")
 DATE_FORMAT = "%Y-%m-%d"
 SESSION_COOKIE_NAME = "subtracker_session"
 CSRF_COOKIE_NAME = "subtracker_csrf"
-SESSION_DURATION_DAYS = 30
 PASSWORD_HASH_ITERATIONS = 200_000
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW = timedelta(minutes=10)
 LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
+DEFAULT_SESSION_DURATION_DAYS = 30
+PRODUCTION_SESSION_DURATION_DAYS = 7
+DEFAULT_IDLE_TIMEOUT_MINUTES = 0
 
 CYCLE_TO_MONTHS = {
     "monthly": 1,
@@ -44,6 +46,50 @@ DEFAULT_CATEGORIES = [
 
 def utc_now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
+
+
+def session_duration_days() -> int:
+    raw = os.environ.get("SESSION_DURATION_DAYS", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+
+    return PRODUCTION_SESSION_DURATION_DAYS if os.environ.get("ENV", "").strip().lower() == "production" else DEFAULT_SESSION_DURATION_DAYS
+
+
+def session_idle_timeout_minutes() -> int:
+    raw = os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+            if parsed >= 0:
+                return parsed
+        except ValueError:
+            pass
+    return DEFAULT_IDLE_TIMEOUT_MINUTES
+
+
+def is_session_idle_expired(
+    last_seen_at: str | None,
+    *,
+    now: datetime | None = None,
+    idle_timeout_minutes: int | None = None,
+) -> bool:
+    timeout_minutes = session_idle_timeout_minutes() if idle_timeout_minutes is None else idle_timeout_minutes
+    if timeout_minutes <= 0 or not last_seen_at:
+        return False
+
+    try:
+        last_seen = datetime.fromisoformat(last_seen_at)
+    except ValueError:
+        return False
+
+    current_time = now or datetime.utcnow()
+    return current_time - last_seen > timedelta(minutes=timeout_minutes)
 
 
 def default_security_headers() -> list[tuple[str, str]]:
@@ -186,6 +232,7 @@ def init_db() -> None:
                 user_id INTEGER NOT NULL,
                 token_hash TEXT NOT NULL UNIQUE,
                 expires_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -219,6 +266,7 @@ def init_db() -> None:
             """
         )
         ensure_subscription_user_column(conn)
+        ensure_session_last_seen_column(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)")
@@ -230,6 +278,21 @@ def ensure_subscription_user_column(conn: sqlite3.Connection) -> None:
     column_names = {column[1] for column in columns}
     if "user_id" not in column_names:
         conn.execute("ALTER TABLE subscriptions ADD COLUMN user_id INTEGER")
+
+
+def ensure_session_last_seen_column(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(sessions)").fetchall()
+    column_names = {column[1] for column in columns}
+    if "last_seen_at" not in column_names:
+        conn.execute("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT")
+        now = utc_now_iso()
+        conn.execute(
+            """
+            UPDATE sessions
+            SET last_seen_at = COALESCE(last_seen_at, created_at, ?)
+            """,
+            (now,),
+        )
 
 
 def add_months(source_date: date, months: int) -> date:
@@ -367,17 +430,20 @@ def parse_auth_payload(body: dict[str, object], require_name: bool) -> tuple[dic
     return {"name": name, "email": email, "password": password}, None
 
 
-def issue_session(conn: sqlite3.Connection, user_id: int) -> str:
+def issue_session(conn: sqlite3.Connection, user_id: int, *, rotate_existing: bool = True) -> str:
     conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (utc_now_iso(),))
+    if rotate_existing:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     token = secrets.token_urlsafe(32)
     token_hash = hash_session_token(token)
-    expires_at = (datetime.utcnow() + timedelta(days=SESSION_DURATION_DAYS)).isoformat(timespec="seconds")
+    now = utc_now_iso()
+    expires_at = (datetime.utcnow() + timedelta(days=session_duration_days())).isoformat(timespec="seconds")
     conn.execute(
         """
-        INSERT INTO sessions (user_id, token_hash, expires_at, created_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO sessions (user_id, token_hash, expires_at, last_seen_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (user_id, token_hash, expires_at, utc_now_iso()),
+        (user_id, token_hash, expires_at, now, now),
     )
     return token
 
@@ -491,18 +557,30 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return None
 
         token_hash = hash_session_token(token)
-        now = utc_now_iso()
+        current_time = datetime.utcnow()
+        now = current_time.isoformat(timespec="seconds")
         with self._db() as conn:
             row = conn.execute(
                 """
-                SELECT users.*
+                SELECT users.*, sessions.id AS session_id, sessions.last_seen_at
                 FROM sessions
                 JOIN users ON users.id = sessions.user_id
                 WHERE sessions.token_hash = ? AND sessions.expires_at > ?
                 """,
                 (token_hash, now),
             ).fetchone()
-        return row
+            if row is None:
+                return None
+
+            if is_session_idle_expired(str(row["last_seen_at"]), now=current_time):
+                conn.execute("DELETE FROM sessions WHERE id = ?", (int(row["session_id"]),))
+                return None
+
+            conn.execute(
+                "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
+                (now, int(row["session_id"])),
+            )
+            return row
 
     def _require_auth_user(self) -> sqlite3.Row | None:
         user = self._current_user()
@@ -512,7 +590,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         return user
 
     def _session_cookie_header(self, token: str) -> tuple[str, str]:
-        max_age = SESSION_DURATION_DAYS * 24 * 60 * 60
+        max_age = session_duration_days() * 24 * 60 * 60
         return (
             "Set-Cookie",
             build_cookie_header(SESSION_COOKIE_NAME, token, max_age=max_age, http_only=True),
@@ -525,7 +603,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         )
 
     def _csrf_cookie_header(self, token: str) -> tuple[str, str]:
-        max_age = SESSION_DURATION_DAYS * 24 * 60 * 60
+        max_age = session_duration_days() * 24 * 60 * 60
         return (
             "Set-Cookie",
             build_cookie_header(CSRF_COOKIE_NAME, token, max_age=max_age, http_only=False),
