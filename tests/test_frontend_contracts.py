@@ -44,6 +44,7 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('"/api/categories"', self.app_js)
         self.assertIn('"/api/subscriptions"', self.app_js)
         self.assertIn('"/api/reminders"', self.app_js)
+        self.assertIn('"X-CSRF-Token"', self.app_js)
 
     def test_app_has_filter_event_handlers(self) -> None:
         self.assertIn('searchInput.addEventListener("input", applyFiltersAndRender)', self.app_js)

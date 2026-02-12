@@ -1,8 +1,9 @@
 import sqlite3
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import server
 
@@ -135,6 +136,48 @@ class ServerLogicTests(unittest.TestCase):
         self.assertEqual(row["token_hash"], token_hash)
         expires_at = datetime.fromisoformat(row["expires_at"])
         self.assertGreater(expires_at, datetime.utcnow())
+
+    def test_csrf_pair_validation(self) -> None:
+        self.assertTrue(server.is_valid_csrf_pair("token-1", "token-1"))
+        self.assertFalse(server.is_valid_csrf_pair("token-1", "token-2"))
+        self.assertFalse(server.is_valid_csrf_pair("", "token-1"))
+        self.assertFalse(server.is_valid_csrf_pair("token-1", None))
+
+    def test_cookie_header_respects_secure_flag(self) -> None:
+        with patch.dict("os.environ", {"COOKIE_SECURE": "0"}, clear=False):
+            header = server.build_cookie_header("name", "value", max_age=120, http_only=True)
+            self.assertIn("HttpOnly", header)
+            self.assertNotIn("Secure", header)
+
+        with patch.dict("os.environ", {"COOKIE_SECURE": "1"}, clear=False):
+            header = server.build_cookie_header("name", "value", max_age=120, http_only=False)
+            self.assertIn("Secure", header)
+            self.assertNotIn("HttpOnly", header)
+
+    def test_login_rate_limiter_locks_after_threshold(self) -> None:
+        limiter = server.LoginRateLimiter(
+            max_attempts=2,
+            attempt_window=timedelta(minutes=5),
+            lockout_duration=timedelta(minutes=7),
+        )
+        key = "127.0.0.1|user@example.com"
+        now = datetime(2026, 2, 12, 12, 0, 0)
+
+        limited, retry = limiter.is_limited(key, now=now)
+        self.assertFalse(limited)
+        self.assertEqual(retry, 0)
+
+        self.assertEqual(limiter.register_failure(key, now=now), 0)
+        lock_seconds = limiter.register_failure(key, now=now + timedelta(seconds=10))
+        self.assertGreater(lock_seconds, 0)
+
+        limited, retry = limiter.is_limited(key, now=now + timedelta(seconds=20))
+        self.assertTrue(limited)
+        self.assertGreater(retry, 0)
+
+        limited, retry = limiter.is_limited(key, now=now + timedelta(minutes=8))
+        self.assertFalse(limited)
+        self.assertEqual(retry, 0)
 
 
 if __name__ == "__main__":

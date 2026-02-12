@@ -59,6 +59,16 @@ From project root:
 - Required env vars:
   - `HOST=0.0.0.0`
   - `PORT` from your provider (or `8000`)
+- Recommended security env vars:
+  - `ENV=production`
+  - `COOKIE_SECURE=1`
+  - `COOKIE_SAMESITE=Lax` (or `Strict`)
+
+## Security
+- Passwords are stored using PBKDF2-HMAC-SHA256 with per-user salts.
+- Session auth uses `HttpOnly` cookies.
+- CSRF protection is enforced on authenticated mutating routes (`POST`, `PUT`, `DELETE` for subscriptions/categories and logout) using an `X-CSRF-Token` header that must match the CSRF cookie.
+- Login rate limiting is enforced per `IP + email` to reduce brute-force attempts (`5` attempts per `10` minutes, then `15` minute lockout).
 
 ## API Endpoints
 - `GET /api/health`

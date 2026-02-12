@@ -61,6 +61,17 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 
+function getCookieValue(name) {
+  const pairs = document.cookie ? document.cookie.split("; ") : [];
+  for (const pair of pairs) {
+    const [key, ...rest] = pair.split("=");
+    if (key === name) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return "";
+}
+
 function setMessage(targetEl, message, type = "") {
   targetEl.textContent = message;
   targetEl.classList.remove("error", "success");
@@ -146,12 +157,21 @@ function setAuthenticatedUser(user) {
 }
 
 async function apiRequest(url, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const csrfToken = getCookieValue("subtracker_csrf");
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+  }
+
   const response = await fetch(url, {
     credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
+    headers,
     ...options,
   });
 

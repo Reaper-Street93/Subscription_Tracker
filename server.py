@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 from datetime import date, datetime, timedelta
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -17,8 +18,12 @@ DB_PATH = Path(__file__).with_name("subscriptions.db")
 STATIC_DIR = Path(__file__).with_name("static")
 DATE_FORMAT = "%Y-%m-%d"
 SESSION_COOKIE_NAME = "subtracker_session"
+CSRF_COOKIE_NAME = "subtracker_csrf"
 SESSION_DURATION_DAYS = 30
 PASSWORD_HASH_ITERATIONS = 200_000
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW = timedelta(minutes=10)
+LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
 
 CYCLE_TO_MONTHS = {
     "monthly": 1,
@@ -39,6 +44,104 @@ DEFAULT_CATEGORIES = [
 
 def utc_now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
+
+
+def should_use_secure_cookie() -> bool:
+    cookie_secure_env = os.environ.get("COOKIE_SECURE", "").strip().lower()
+    if cookie_secure_env in {"1", "true", "yes", "on"}:
+        return True
+    return os.environ.get("ENV", "").strip().lower() == "production"
+
+
+def cookie_samesite() -> str:
+    raw = os.environ.get("COOKIE_SAMESITE", "Lax").strip().capitalize()
+    if raw in {"Lax", "Strict", "None"}:
+        return raw
+    return "Lax"
+
+
+def build_cookie_header(
+    name: str,
+    value: str,
+    *,
+    max_age: int,
+    http_only: bool,
+) -> str:
+    parts = [
+        f"{name}={value}",
+        "Path=/",
+        f"SameSite={cookie_samesite()}",
+        f"Max-Age={max_age}",
+    ]
+    if http_only:
+        parts.append("HttpOnly")
+    if should_use_secure_cookie():
+        parts.append("Secure")
+    return "; ".join(parts)
+
+
+def is_valid_csrf_pair(cookie_token: str | None, header_token: str | None) -> bool:
+    if not cookie_token or not header_token:
+        return False
+    return hmac.compare_digest(cookie_token, header_token)
+
+
+class LoginRateLimiter:
+    def __init__(
+        self,
+        *,
+        max_attempts: int = LOGIN_MAX_ATTEMPTS,
+        attempt_window: timedelta = LOGIN_ATTEMPT_WINDOW,
+        lockout_duration: timedelta = LOGIN_LOCKOUT_DURATION,
+    ) -> None:
+        self.max_attempts = max_attempts
+        self.attempt_window = attempt_window
+        self.lockout_duration = lockout_duration
+        self._entries: dict[str, dict[str, object]] = {}
+        self._lock = threading.Lock()
+
+    def _prune_attempts(self, attempts: list[datetime], now: datetime) -> list[datetime]:
+        return [item for item in attempts if now - item <= self.attempt_window]
+
+    def is_limited(self, key: str, now: datetime | None = None) -> tuple[bool, int]:
+        current_time = now or datetime.utcnow()
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return False, 0
+
+            locked_until = entry.get("locked_until")
+            if isinstance(locked_until, datetime):
+                if locked_until > current_time:
+                    retry_after = int((locked_until - current_time).total_seconds())
+                    return True, max(1, retry_after)
+                entry["locked_until"] = None
+                entry["attempts"] = []
+
+            attempts = self._prune_attempts(list(entry.get("attempts", [])), current_time)
+            entry["attempts"] = attempts
+            return False, 0
+
+    def register_failure(self, key: str, now: datetime | None = None) -> int:
+        current_time = now or datetime.utcnow()
+        with self._lock:
+            entry = self._entries.setdefault(key, {"attempts": [], "locked_until": None})
+            attempts = self._prune_attempts(list(entry.get("attempts", [])), current_time)
+            attempts.append(current_time)
+            entry["attempts"] = attempts
+
+            if len(attempts) >= self.max_attempts:
+                locked_until = current_time + self.lockout_duration
+                entry["locked_until"] = locked_until
+                return int(self.lockout_duration.total_seconds())
+            return 0
+
+    def clear(self, key: str) -> None:
+        with self._lock:
+            self._entries.pop(key, None)
+
+
+LOGIN_RATE_LIMITER = LoginRateLimiter()
 
 
 def init_db() -> None:
@@ -326,6 +429,34 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE_NAME)
         return morsel.value if morsel else None
 
+    def _csrf_token_from_cookie(self) -> str | None:
+        cookie_header = self.headers.get("Cookie")
+        if not cookie_header:
+            return None
+
+        cookie = SimpleCookie()
+        cookie.load(cookie_header)
+        morsel = cookie.get(CSRF_COOKIE_NAME)
+        return morsel.value if morsel else None
+
+    def _csrf_token_from_header(self) -> str | None:
+        return self.headers.get("X-CSRF-Token")
+
+    def _csrf_is_valid(self) -> bool:
+        return is_valid_csrf_pair(self._csrf_token_from_cookie(), self._csrf_token_from_header())
+
+    def _require_csrf(self) -> bool:
+        if self._csrf_is_valid():
+            return True
+        self._send_json({"error": "Invalid CSRF token"}, status=403)
+        return False
+
+    def _client_ip(self) -> str:
+        forwarded_for = self.headers.get("X-Forwarded-For", "").strip()
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        return self.client_address[0] if self.client_address else "unknown"
+
     def _current_user(self) -> sqlite3.Row | None:
         token = self._session_token_from_cookie()
         if not token:
@@ -356,13 +487,26 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         max_age = SESSION_DURATION_DAYS * 24 * 60 * 60
         return (
             "Set-Cookie",
-            f"{SESSION_COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}",
+            build_cookie_header(SESSION_COOKIE_NAME, token, max_age=max_age, http_only=True),
         )
 
     def _clear_session_cookie_header(self) -> tuple[str, str]:
         return (
             "Set-Cookie",
-            f"{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+            build_cookie_header(SESSION_COOKIE_NAME, "", max_age=0, http_only=True),
+        )
+
+    def _csrf_cookie_header(self, token: str) -> tuple[str, str]:
+        max_age = SESSION_DURATION_DAYS * 24 * 60 * 60
+        return (
+            "Set-Cookie",
+            build_cookie_header(CSRF_COOKIE_NAME, token, max_age=max_age, http_only=False),
+        )
+
+    def _clear_csrf_cookie_header(self) -> tuple[str, str]:
+        return (
+            "Set-Cookie",
+            build_cookie_header(CSRF_COOKIE_NAME, "", max_age=0, http_only=False),
         )
 
     def do_GET(self) -> None:
@@ -435,8 +579,10 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         user = self._current_user()
         if user is None:
             return self._send_json({"user": None})
-
-        self._send_json({"user": serialize_user(user)})
+        extra_headers: list[tuple[str, str]] = []
+        if not self._csrf_token_from_cookie():
+            extra_headers.append(self._csrf_cookie_header(secrets.token_urlsafe(24)))
+        self._send_json({"user": serialize_user(user)}, extra_headers=extra_headers or None)
 
     def _auth_signup(self) -> None:
         try:
@@ -463,19 +609,18 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 user_id = int(cursor.lastrowid)
                 token = issue_session(conn, user_id)
                 user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+                seed_default_categories(conn, user_id)
         except sqlite3.IntegrityError:
             return self._send_json({"error": "An account with that email already exists"}, status=409)
 
         if user is None:
             return self._send_json({"error": "Unable to create account"}, status=500)
 
-        with self._db() as conn:
-            seed_default_categories(conn, user_id)
-
+        csrf_token = secrets.token_urlsafe(24)
         self._send_json(
             {"user": serialize_user(user)},
             status=201,
-            extra_headers=[self._session_cookie_header(token)],
+            extra_headers=[self._session_cookie_header(token), self._csrf_cookie_header(csrf_token)],
         )
 
     def _auth_login(self) -> None:
@@ -488,27 +633,51 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         if error or payload is None:
             return self._send_json({"error": error or "Invalid payload"}, status=400)
 
+        limit_key = f"{self._client_ip()}|{payload['email']}"
+        limited, retry_after = LOGIN_RATE_LIMITER.is_limited(limit_key)
+        if limited:
+            return self._send_json(
+                {"error": "Too many login attempts. Try again later."},
+                status=429,
+                extra_headers=[("Retry-After", str(retry_after))],
+            )
+
         with self._db() as conn:
             user = conn.execute("SELECT * FROM users WHERE email = ?", (payload["email"],)).fetchone()
             if user is None or not verify_password(payload["password"], str(user["password_hash"])):
+                lock_seconds = LOGIN_RATE_LIMITER.register_failure(limit_key)
+                if lock_seconds > 0:
+                    return self._send_json(
+                        {"error": "Too many login attempts. Try again later."},
+                        status=429,
+                        extra_headers=[("Retry-After", str(lock_seconds))],
+                    )
                 return self._send_json({"error": "Invalid email or password"}, status=401)
 
             seed_default_categories(conn, int(user["id"]))
             token = issue_session(conn, int(user["id"]))
+            LOGIN_RATE_LIMITER.clear(limit_key)
 
+        csrf_token = secrets.token_urlsafe(24)
         self._send_json(
             {"user": serialize_user(user)},
-            extra_headers=[self._session_cookie_header(token)],
+            extra_headers=[self._session_cookie_header(token), self._csrf_cookie_header(csrf_token)],
         )
 
     def _auth_logout(self) -> None:
         token = self._session_token_from_cookie()
+        if token and not self._require_csrf():
+            return
+
         if token:
             token_hash = hash_session_token(token)
             with self._db() as conn:
                 conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
 
-        self._send_json({"loggedOut": True}, extra_headers=[self._clear_session_cookie_header()])
+        self._send_json(
+            {"loggedOut": True},
+            extra_headers=[self._clear_session_cookie_header(), self._clear_csrf_cookie_header()],
+        )
 
     def _get_subscriptions(self) -> None:
         user = self._require_auth_user()
@@ -599,6 +768,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         user = self._require_auth_user()
         if user is None:
             return
+        if not self._require_csrf():
+            return
 
         try:
             body = self._read_json()
@@ -643,6 +814,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
     def _update_subscription(self, sub_id: int) -> None:
         user = self._require_auth_user()
         if user is None:
+            return
+        if not self._require_csrf():
             return
 
         try:
@@ -691,6 +864,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         user = self._require_auth_user()
         if user is None:
             return
+        if not self._require_csrf():
+            return
 
         with self._db() as conn:
             cursor = conn.execute(
@@ -706,6 +881,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
     def _create_category(self) -> None:
         user = self._require_auth_user()
         if user is None:
+            return
+        if not self._require_csrf():
             return
 
         try:
@@ -744,6 +921,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
     def _delete_category(self, category_id: int) -> None:
         user = self._require_auth_user()
         if user is None:
+            return
+        if not self._require_csrf():
             return
 
         with self._db() as conn:
