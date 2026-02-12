@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+subscriptions.db
+.DS_Store
