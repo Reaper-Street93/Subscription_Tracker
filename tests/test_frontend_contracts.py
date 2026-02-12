@@ -39,6 +39,9 @@ class FrontendContractsTests(unittest.TestCase):
             'class="user-greeting"',
             'id="heroTotalMonthly"',
             'id="heroNextPayment"',
+            'id="heroHeader"',
+            'id="mainNavLinks"',
+            'id="currencyControl"',
             'id="totalSpendTitle"',
             'id="heroTotalLabel"',
             'id="spendModeLabel"',
@@ -113,6 +116,8 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("valueForSpendMode", self.app_js)
         self.assertIn("isScheduledThisMonth", self.app_js)
         self.assertIn("subtracker-spend-view", self.app_js)
+        self.assertIn('classList.toggle("auth-view"', self.app_js)
+        self.assertIn("heroHeader.hidden", self.app_js)
 
 
 if __name__ == "__main__":

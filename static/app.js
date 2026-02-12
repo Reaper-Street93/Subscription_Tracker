@@ -10,6 +10,9 @@ const authMessage = document.getElementById("authMessage");
 const userSession = document.getElementById("userSession");
 const userBadge = document.getElementById("userBadge");
 const logoutBtn = document.getElementById("logoutBtn");
+const heroHeader = document.getElementById("heroHeader");
+const mainNavLinks = document.getElementById("mainNavLinks");
+const currencyControl = document.getElementById("currencyControl");
 
 const form = document.getElementById("subscriptionForm");
 const formMessage = document.getElementById("formMessage");
@@ -418,9 +421,19 @@ function setAuthenticatedUser(user) {
   currentUser = user;
   const isLoggedIn = Boolean(user);
 
+  document.body.classList.toggle("auth-view", !isLoggedIn);
   authPanel.hidden = isLoggedIn;
   appShell.hidden = !isLoggedIn;
   userSession.hidden = !isLoggedIn;
+  if (heroHeader) {
+    heroHeader.hidden = !isLoggedIn;
+  }
+  if (mainNavLinks) {
+    mainNavLinks.hidden = !isLoggedIn;
+  }
+  if (currencyControl) {
+    currencyControl.hidden = !isLoggedIn;
+  }
 
   if (isLoggedIn) {
     const firstName = String(user.name || "")
@@ -1154,7 +1167,5 @@ setDefaultDate();
 sortSelect.value = "due_soon";
 setCurrency(getStoredCurrency(), false);
 setSpendMode(getStoredSpendMode(), false);
-updateNotificationStatus();
-renderCategoryControls();
-applyFiltersAndRender();
+setAuthenticatedUser(null);
 checkSession();

@@ -23,11 +23,11 @@
       <div class="nav-inner">
         <a class="brand" href="/">SubTracker</a>
         <div class="nav-right">
-          <div class="nav-links">
+          <div id="mainNavLinks" class="nav-links">
             <a href="/" class="active" aria-current="page">Dashboard</a>
             <a href="/about.html">About</a>
           </div>
-          <label class="currency-control" for="currencySelect">
+          <label id="currencyControl" class="currency-control" for="currencySelect">
             Currency
             <select id="currencySelect" aria-label="Display currency">
               <option value="USD">USD</option>
@@ -44,7 +44,7 @@
     </nav>
 
     <main class="layout">
-      <header class="hero">
+      <header id="heroHeader" class="hero">
         <div class="hero-head">
           <div class="hero-main">
             <div id="userSession" class="user-session" hidden>
