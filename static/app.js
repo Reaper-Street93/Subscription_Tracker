@@ -291,7 +291,7 @@ function setAuthenticatedUser(user) {
     const firstName = String(user.name || "")
       .trim()
       .split(/\s+/)[0] || String(user.email || "there").split("@")[0];
-    userBadge.textContent = `hello, ${firstName}.`;
+    userBadge.textContent = `hello ${firstName}`;
     setAuthMessage("");
     setDefaultDate();
     updateNotificationStatus();
