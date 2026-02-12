@@ -90,8 +90,27 @@
 
               <label>
                 Category
-                <input type="text" name="category" placeholder="Streaming" required />
+                <select id="subscriptionCategorySelect" name="category" required></select>
               </label>
+
+              <div class="category-manager">
+                <div class="panel-header category-manager-header">
+                  <h3>Manage Categories</h3>
+                  <span class="subtle">Used in forms and filters</span>
+                </div>
+                <div class="category-create">
+                  <input
+                    id="newCategoryInput"
+                    type="text"
+                    placeholder="Add new category"
+                    maxlength="40"
+                    aria-label="New category name"
+                  />
+                  <button id="addCategoryBtn" class="secondary-btn" type="button">Add</button>
+                </div>
+                <p id="categoryMessage" class="form-message" role="status" aria-live="polite"></p>
+                <ul id="categoryList" class="category-list"></ul>
+              </div>
 
               <label>
                 Billing Amount (USD)
@@ -137,6 +156,19 @@
             <div class="panel-header">
               <h2>Subscriptions</h2>
               <span id="subscriptionCount" class="subtle">0 items</span>
+            </div>
+            <div class="filters-row">
+              <input id="searchInput" type="search" placeholder="Search by subscription name" />
+              <select id="categoryFilterSelect" aria-label="Filter by category">
+                <option value="">All categories</option>
+              </select>
+              <select id="sortSelect" aria-label="Sort subscriptions">
+                <option value="due_soon">Sort: Due Soon</option>
+                <option value="cost_desc">Sort: Monthly Cost High to Low</option>
+                <option value="cost_asc">Sort: Monthly Cost Low to High</option>
+                <option value="name_asc">Sort: Name A to Z</option>
+                <option value="newest">Sort: Newest Added</option>
+              </select>
             </div>
             <div class="table-wrap">
               <table>

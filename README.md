@@ -6,6 +6,8 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 - User authentication (sign up, sign in, sign out)
 - Add subscription
 - Edit subscription
+- Search, filter, and sort subscriptions
+- Category management (create/delete categories)
 - Monthly cost auto-calculated (monthly, quarterly, yearly billing)
 - Total monthly spend summary
 - Upcoming payment reminders
@@ -63,6 +65,9 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 - `PUT /api/subscriptions/:id`
 - `DELETE /api/subscriptions/:id`
 - `GET /api/reminders`
+- `GET /api/categories`
+- `POST /api/categories`
+- `DELETE /api/categories/:id`
 
 ## Data Model
 Each user stores:
@@ -84,6 +89,11 @@ Each subscription stores:
 - `amount`
 - `billing_cycle` (`monthly`, `quarterly`, `yearly`)
 - `next_payment_date`
+- `created_at`
+
+Each category stores:
+- `user_id`
+- `name`
 - `created_at`
 
 ## Calculation Rules

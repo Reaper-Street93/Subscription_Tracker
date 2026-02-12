@@ -198,6 +198,64 @@ form {
   gap: 0.8rem;
 }
 
+.category-manager {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 0.68rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.category-manager-header h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.category-create {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.category-create input {
+  flex: 1;
+}
+
+.category-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.42rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.category-chip button {
+  border: 0;
+  background: transparent;
+  color: #ffd4d4;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+}
+
+.category-chip button:hover {
+  color: #ff6b6b;
+}
+
 .form-actions {
   display: flex;
   gap: 0.55rem;
@@ -282,6 +340,13 @@ button:active {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.filters-row {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(180px, 1fr) 220px 240px;
+  margin-bottom: 0.8rem;
 }
 
 table {
@@ -443,6 +508,10 @@ td:last-child {
     grid-template-columns: 1fr;
   }
 
+  .filters-row {
+    grid-template-columns: 1fr;
+  }
+
   .chart-wrap {
     grid-template-columns: 1fr;
     justify-items: center;
@@ -467,5 +536,9 @@ td:last-child {
   .hero,
   .stat-card {
     border-radius: 16px;
+  }
+
+  .category-create {
+    flex-direction: column;
   }
 }

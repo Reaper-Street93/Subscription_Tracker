@@ -29,9 +29,21 @@ const nextPaymentInput = document.querySelector('input[name="nextPaymentDate"]')
 const enableNotificationsBtn = document.getElementById("enableNotificationsBtn");
 const notificationStatusEl = document.getElementById("notificationStatus");
 
+const subscriptionCategorySelect = document.getElementById("subscriptionCategorySelect");
+const newCategoryInput = document.getElementById("newCategoryInput");
+const addCategoryBtn = document.getElementById("addCategoryBtn");
+const categoryMessage = document.getElementById("categoryMessage");
+const categoryList = document.getElementById("categoryList");
+const searchInput = document.getElementById("searchInput");
+const categoryFilterSelect = document.getElementById("categoryFilterSelect");
+const sortSelect = document.getElementById("sortSelect");
+
 let editingId = null;
 let authMode = "login";
 let currentUser = null;
+let allSubscriptions = [];
+let allReminders = [];
+let allCategories = [];
 
 const pieColors = [
   "#ff8a3d",
@@ -65,6 +77,10 @@ function setAuthMessage(message, type = "") {
   setMessage(authMessage, message, type);
 }
 
+function setCategoryMessage(message, type = "") {
+  setMessage(categoryMessage, message, type);
+}
+
 function toFriendlyCycle(cycle) {
   return cycle.charAt(0).toUpperCase() + cycle.slice(1);
 }
@@ -96,6 +112,12 @@ function setAuthMode(mode) {
   passwordInput.autocomplete = isSignup ? "new-password" : "current-password";
 }
 
+function clearDataState() {
+  allSubscriptions = [];
+  allReminders = [];
+  allCategories = [];
+}
+
 function setAuthenticatedUser(user) {
   currentUser = user;
   const isLoggedIn = Boolean(user);
@@ -114,10 +136,12 @@ function setAuthenticatedUser(user) {
 
   userBadge.textContent = "";
   setFormMode("create");
-  renderSummary(0, null);
-  renderSubscriptions([]);
-  renderReminders([]);
-  renderPieChart([]);
+  searchInput.value = "";
+  categoryFilterSelect.value = "";
+  sortSelect.value = "due_soon";
+  clearDataState();
+  renderCategoryControls();
+  applyFiltersAndRender();
   updateNotificationStatus();
 }
 
@@ -154,30 +178,6 @@ function handleUnauthorized(error) {
     return true;
   }
   return false;
-}
-
-async function loadDashboard() {
-  if (!currentUser) {
-    return;
-  }
-
-  try {
-    const [subscriptionsData, remindersData] = await Promise.all([
-      apiRequest("/api/subscriptions"),
-      apiRequest("/api/reminders"),
-    ]);
-
-    renderSummary(subscriptionsData.totalMonthlySpend, remindersData.nextReminder);
-    renderSubscriptions(subscriptionsData.subscriptions);
-    renderReminders(remindersData.reminders);
-    renderPieChart(subscriptionsData.spendingByCategory);
-    maybeNotifyDueSoon(remindersData.reminders);
-  } catch (error) {
-    if (handleUnauthorized(error)) {
-      return;
-    }
-    setFormMessage(error.message, "error");
-  }
 }
 
 function renderSummary(totalMonthlySpend, nextReminder) {
@@ -403,12 +403,161 @@ function maybeNotifyDueSoon(reminders) {
   }
 }
 
+function ensureSelectOption(selectEl, value) {
+  if (!value) {
+    return;
+  }
+  const exists = Array.from(selectEl.options).some((option) => option.value === value);
+  if (exists) {
+    return;
+  }
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = value;
+  selectEl.appendChild(option);
+}
+
+function renderCategoryControls() {
+  const previousFormValue = subscriptionCategorySelect.value;
+  const previousFilterValue = categoryFilterSelect.value;
+
+  const categoryNames = new Set(allCategories.map((category) => category.name));
+  for (const sub of allSubscriptions) {
+    categoryNames.add(sub.category);
+  }
+  if (categoryNames.size === 0) {
+    categoryNames.add("Other");
+  }
+
+  const sortedNames = Array.from(categoryNames).sort((a, b) => a.localeCompare(b));
+
+  subscriptionCategorySelect.innerHTML = "";
+  for (const name of sortedNames) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    subscriptionCategorySelect.appendChild(option);
+  }
+
+  categoryFilterSelect.innerHTML = "";
+  const allOption = document.createElement("option");
+  allOption.value = "";
+  allOption.textContent = "All categories";
+  categoryFilterSelect.appendChild(allOption);
+
+  for (const name of sortedNames) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    categoryFilterSelect.appendChild(option);
+  }
+
+  const formValueExists = Array.from(subscriptionCategorySelect.options).some((option) => option.value === previousFormValue);
+  if (formValueExists) {
+    subscriptionCategorySelect.value = previousFormValue;
+  } else if (subscriptionCategorySelect.options.length > 0) {
+    subscriptionCategorySelect.value = subscriptionCategorySelect.options[0].value;
+  }
+
+  const filterValueExists = Array.from(categoryFilterSelect.options).some((option) => option.value === previousFilterValue);
+  if (filterValueExists) {
+    categoryFilterSelect.value = previousFilterValue;
+  } else {
+    categoryFilterSelect.value = "";
+  }
+
+  categoryList.innerHTML = "";
+  if (!allCategories.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.className = "empty-state";
+    emptyItem.textContent = "No categories yet. Add one above.";
+    categoryList.appendChild(emptyItem);
+    return;
+  }
+
+  for (const category of allCategories) {
+    const chip = document.createElement("li");
+    chip.className = "category-chip";
+
+    const label = document.createElement("span");
+    label.textContent = category.name;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.setAttribute("aria-label", `Delete ${category.name} category`);
+    removeBtn.textContent = "x";
+    removeBtn.addEventListener("click", () => deleteCategory(category.id, category.name));
+
+    chip.append(label, removeBtn);
+    categoryList.appendChild(chip);
+  }
+}
+
+function buildSpendingByCategory(subscriptions) {
+  const totals = {};
+  for (const sub of subscriptions) {
+    totals[sub.category] = (totals[sub.category] || 0) + Number(sub.monthlyCost);
+  }
+
+  return Object.entries(totals)
+    .map(([category, monthlyCost]) => ({ category, monthlyCost: Number(monthlyCost.toFixed(2)) }))
+    .sort((a, b) => b.monthlyCost - a.monthlyCost);
+}
+
+function getFilteredSubscriptions() {
+  const query = searchInput.value.trim().toLowerCase();
+  const categoryFilter = categoryFilterSelect.value;
+  const sortMode = sortSelect.value;
+
+  let filtered = allSubscriptions.filter((sub) => {
+    const matchesName = !query || sub.name.toLowerCase().includes(query);
+    const matchesCategory = !categoryFilter || sub.category === categoryFilter;
+    return matchesName && matchesCategory;
+  });
+
+  filtered = [...filtered];
+
+  if (sortMode === "cost_desc") {
+    filtered.sort((a, b) => b.monthlyCost - a.monthlyCost || a.name.localeCompare(b.name));
+  } else if (sortMode === "cost_asc") {
+    filtered.sort((a, b) => a.monthlyCost - b.monthlyCost || a.name.localeCompare(b.name));
+  } else if (sortMode === "name_asc") {
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (sortMode === "newest") {
+    filtered.sort((a, b) => b.id - a.id);
+  } else {
+    filtered.sort((a, b) => a.daysUntilPayment - b.daysUntilPayment || a.name.localeCompare(b.name));
+  }
+
+  return filtered;
+}
+
+function remindersForSubscriptions(subscriptions) {
+  const idSet = new Set(subscriptions.map((sub) => sub.id));
+  return allReminders
+    .filter((reminder) => idSet.has(reminder.id))
+    .sort((a, b) => a.daysUntilPayment - b.daysUntilPayment || a.name.localeCompare(b.name));
+}
+
+function applyFiltersAndRender() {
+  const filteredSubs = getFilteredSubscriptions();
+  const filteredReminders = remindersForSubscriptions(filteredSubs);
+  const totalMonthly = filteredSubs.reduce((sum, sub) => sum + Number(sub.monthlyCost), 0);
+
+  renderSummary(Number(totalMonthly.toFixed(2)), filteredReminders[0] || null);
+  renderSubscriptions(filteredSubs);
+  renderReminders(filteredReminders);
+  renderPieChart(buildSpendingByCategory(filteredSubs));
+}
+
 function setFormMode(mode, sub = null) {
   if (mode === "edit" && sub) {
     editingId = sub.id;
     formTitle.textContent = "Edit Subscription";
     submitBtn.textContent = "Update Subscription";
     cancelEditBtn.hidden = false;
+    ensureSelectOption(subscriptionCategorySelect, sub.category);
+
     form.elements.name.value = sub.name;
     form.elements.category.value = sub.category;
     form.elements.amount.value = String(sub.amount);
@@ -423,6 +572,10 @@ function setFormMode(mode, sub = null) {
   cancelEditBtn.hidden = true;
   form.reset();
   setDefaultDate();
+
+  if (subscriptionCategorySelect.options.length > 0) {
+    subscriptionCategorySelect.value = subscriptionCategorySelect.options[0].value;
+  }
 }
 
 async function deleteSubscription(id) {
@@ -433,6 +586,72 @@ async function deleteSubscription(id) {
     }
     await loadDashboard();
     setFormMessage("Subscription removed.", "success");
+  } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
+    setFormMessage(error.message, "error");
+  }
+}
+
+async function createCategory() {
+  const name = newCategoryInput.value.trim();
+  if (name.length < 2) {
+    setCategoryMessage("Category name must be at least 2 characters.", "error");
+    return;
+  }
+
+  try {
+    const data = await apiRequest("/api/categories", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+
+    newCategoryInput.value = "";
+    setCategoryMessage(`Category \"${data.category.name}\" added.`, "success");
+    await loadDashboard();
+    ensureSelectOption(subscriptionCategorySelect, data.category.name);
+    subscriptionCategorySelect.value = data.category.name;
+  } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
+    setCategoryMessage(error.message, "error");
+  }
+}
+
+async function deleteCategory(categoryId, categoryName) {
+  try {
+    await apiRequest(`/api/categories/${categoryId}`, { method: "DELETE" });
+    setCategoryMessage(`Category \"${categoryName}\" deleted.`, "success");
+    await loadDashboard();
+  } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
+    setCategoryMessage(error.message, "error");
+  }
+}
+
+async function loadDashboard() {
+  if (!currentUser) {
+    return;
+  }
+
+  try {
+    const [subscriptionsData, remindersData, categoriesData] = await Promise.all([
+      apiRequest("/api/subscriptions"),
+      apiRequest("/api/reminders"),
+      apiRequest("/api/categories"),
+    ]);
+
+    allSubscriptions = subscriptionsData.subscriptions;
+    allReminders = remindersData.reminders;
+    allCategories = categoriesData.categories;
+
+    renderCategoryControls();
+    applyFiltersAndRender();
+    maybeNotifyDueSoon(allReminders);
   } catch (error) {
     if (handleUnauthorized(error)) {
       return;
@@ -476,7 +695,7 @@ authForm.addEventListener("submit", async (event) => {
     password: String(formData.get("authPassword") || ""),
   };
 
-  if (authMode === "signup") {
+  if (wasSignup) {
     payload.name = String(formData.get("authName") || "").trim();
   }
 
@@ -493,6 +712,7 @@ authForm.addEventListener("submit", async (event) => {
     setAuthMode("login");
     setAuthMessage(wasSignup ? "Account created." : "Signed in.", "success");
     setFormMessage("");
+    setCategoryMessage("");
     await loadDashboard();
   } catch (error) {
     setAuthMessage(error.message, "error");
@@ -510,6 +730,7 @@ logoutBtn.addEventListener("click", async () => {
   setAuthMode("login");
   setAuthMessage("Signed out.", "success");
   setFormMessage("");
+  setCategoryMessage("");
 });
 
 form.addEventListener("submit", async (event) => {
@@ -579,7 +800,22 @@ enableNotificationsBtn.addEventListener("click", async () => {
   await loadDashboard();
 });
 
+addCategoryBtn.addEventListener("click", createCategory);
+newCategoryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    createCategory();
+  }
+});
+
+searchInput.addEventListener("input", applyFiltersAndRender);
+categoryFilterSelect.addEventListener("change", applyFiltersAndRender);
+sortSelect.addEventListener("change", applyFiltersAndRender);
+
 setAuthMode("login");
 setDefaultDate();
+sortSelect.value = "due_soon";
 updateNotificationStatus();
+renderCategoryControls();
+applyFiltersAndRender();
 checkSession();

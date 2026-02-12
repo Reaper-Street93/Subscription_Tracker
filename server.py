@@ -25,6 +25,16 @@ CYCLE_TO_MONTHS = {
     "quarterly": 3,
     "yearly": 12,
 }
+DEFAULT_CATEGORIES = [
+    "Streaming",
+    "Productivity",
+    "Utilities",
+    "Fitness",
+    "Storage",
+    "Music",
+    "Education",
+    "Other",
+]
 
 
 def utc_now_iso() -> str:
@@ -71,10 +81,23 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL COLLATE NOCASE,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, name),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
         ensure_subscription_user_column(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id)")
 
 
 def ensure_subscription_user_column(conn: sqlite3.Connection) -> None:
@@ -161,9 +184,14 @@ def serialize_subscription(row: sqlite3.Row, today: date | None = None) -> dict[
     }
 
 
+def normalize_category_name(value: str) -> str:
+    cleaned = " ".join(value.split()).strip()
+    return cleaned if cleaned else "Other"
+
+
 def parse_subscription_payload(body: dict[str, object]) -> tuple[dict[str, object] | None, str | None]:
     name = str(body.get("name", "")).strip()
-    category = str(body.get("category", "Other")).strip() or "Other"
+    category = normalize_category_name(str(body.get("category", "Other")))
     billing_cycle = str(body.get("billingCycle", "")).strip().lower()
     payment_date = str(body.get("nextPaymentDate", "")).strip()
 
@@ -227,6 +255,28 @@ def issue_session(conn: sqlite3.Connection, user_id: int) -> str:
         (user_id, token_hash, expires_at, utc_now_iso()),
     )
     return token
+
+
+def seed_default_categories(conn: sqlite3.Connection, user_id: int) -> None:
+    created_at = utc_now_iso()
+    for category in DEFAULT_CATEGORIES:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO categories (user_id, name, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, normalize_category_name(category), created_at),
+        )
+
+
+def ensure_category_exists(conn: sqlite3.Connection, user_id: int, category: str) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO categories (user_id, name, created_at)
+        VALUES (?, ?, ?)
+        """,
+        (user_id, normalize_category_name(category), utc_now_iso()),
+    )
 
 
 class SubscriptionHandler(SimpleHTTPRequestHandler):
@@ -322,6 +372,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._get_subscriptions()
         if parsed.path == "/api/reminders":
             return self._get_reminders()
+        if parsed.path == "/api/categories":
+            return self._get_categories()
         if parsed.path == "/api/auth/me":
             return self._get_auth_me()
         if parsed.path == "/api/health":
@@ -336,6 +388,8 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/subscriptions":
             return self._create_subscription()
+        if parsed.path == "/api/categories":
+            return self._create_category()
         if parsed.path == "/api/auth/signup":
             return self._auth_signup()
         if parsed.path == "/api/auth/login":
@@ -355,6 +409,12 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             except ValueError:
                 return self._send_json({"error": "Invalid subscription id"}, status=400)
             return self._delete_subscription(sub_id)
+        if len(path_parts) == 3 and path_parts[0] == "api" and path_parts[1] == "categories":
+            try:
+                category_id = int(path_parts[2])
+            except ValueError:
+                return self._send_json({"error": "Invalid category id"}, status=400)
+            return self._delete_category(category_id)
 
         return self._send_json({"error": "Not found"}, status=404)
 
@@ -409,6 +469,9 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
         if user is None:
             return self._send_json({"error": "Unable to create account"}, status=500)
 
+        with self._db() as conn:
+            seed_default_categories(conn, user_id)
+
         self._send_json(
             {"user": serialize_user(user)},
             status=201,
@@ -430,6 +493,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             if user is None or not verify_password(payload["password"], str(user["password_hash"])):
                 return self._send_json({"error": "Invalid email or password"}, status=401)
 
+            seed_default_categories(conn, int(user["id"]))
             token = issue_session(conn, int(user["id"]))
 
         self._send_json(
@@ -480,6 +544,20 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 "spendingByCategory": spending_by_category,
             }
         )
+
+    def _get_categories(self) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
+        with self._db() as conn:
+            rows = conn.execute(
+                "SELECT id, name FROM categories WHERE user_id = ? ORDER BY name COLLATE NOCASE ASC",
+                (int(user["id"]),),
+            ).fetchall()
+
+        categories = [{"id": row["id"], "name": row["name"]} for row in rows]
+        self._send_json({"categories": categories})
 
     def _get_reminders(self) -> None:
         user = self._require_auth_user()
@@ -535,6 +613,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
 
         created_at = utc_now_iso()
         with self._db() as conn:
+            ensure_category_exists(conn, int(user["id"]), str(payload["category"]))
             cursor = conn.execute(
                 """
                 INSERT INTO subscriptions (user_id, name, category, amount, billing_cycle, next_payment_date, created_at)
@@ -578,6 +657,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._send_json({"error": "Invalid payload"}, status=400)
 
         with self._db() as conn:
+            ensure_category_exists(conn, int(user["id"]), str(payload["category"]))
             cursor = conn.execute(
                 """
                 UPDATE subscriptions
@@ -620,6 +700,79 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
 
         if cursor.rowcount == 0:
             return self._send_json({"error": "Subscription not found"}, status=404)
+
+        self._send_json({"deleted": True})
+
+    def _create_category(self) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
+        try:
+            body = self._read_json()
+        except json.JSONDecodeError:
+            return self._send_json({"error": "Invalid JSON body"}, status=400)
+
+        name = normalize_category_name(str(body.get("name", "")))
+        if len(name) < 2:
+            return self._send_json({"error": "Category name must be at least 2 characters"}, status=400)
+        if len(name) > 40:
+            return self._send_json({"error": "Category name must be 40 characters or fewer"}, status=400)
+
+        try:
+            with self._db() as conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO categories (user_id, name, created_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (int(user["id"]), name, utc_now_iso()),
+                )
+                category_id = int(cursor.lastrowid)
+                row = conn.execute(
+                    "SELECT id, name FROM categories WHERE id = ? AND user_id = ?",
+                    (category_id, int(user["id"])),
+                ).fetchone()
+        except sqlite3.IntegrityError:
+            return self._send_json({"error": "That category already exists"}, status=409)
+
+        if row is None:
+            return self._send_json({"error": "Unable to create category"}, status=500)
+
+        self._send_json({"category": {"id": row["id"], "name": row["name"]}}, status=201)
+
+    def _delete_category(self, category_id: int) -> None:
+        user = self._require_auth_user()
+        if user is None:
+            return
+
+        with self._db() as conn:
+            category_row = conn.execute(
+                "SELECT id, name FROM categories WHERE id = ? AND user_id = ?",
+                (category_id, int(user["id"])),
+            ).fetchone()
+            if category_row is None:
+                return self._send_json({"error": "Category not found"}, status=404)
+
+            usage_row = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM subscriptions
+                WHERE user_id = ? AND category = ? COLLATE NOCASE
+                """,
+                (int(user["id"]), str(category_row["name"])),
+            ).fetchone()
+            usage_count = int(usage_row["count"]) if usage_row else 0
+            if usage_count > 0:
+                return self._send_json(
+                    {"error": "Cannot delete a category that is in use by subscriptions"},
+                    status=409,
+                )
+
+            conn.execute(
+                "DELETE FROM categories WHERE id = ? AND user_id = ?",
+                (category_id, int(user["id"])),
+            )
 
         self._send_json({"deleted": True})
 
