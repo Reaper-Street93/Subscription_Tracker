@@ -69,6 +69,7 @@ From project root:
 - Session auth uses `HttpOnly` cookies.
 - CSRF protection is enforced on authenticated mutating routes (`POST`, `PUT`, `DELETE` for subscriptions/categories and logout) using an `X-CSRF-Token` header that must match the CSRF cookie.
 - Login rate limiting is enforced per `IP + email` to reduce brute-force attempts (`5` attempts per `10` minutes, then `15` minute lockout).
+- HTTP security headers are applied to all responses: `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`.
 
 ## API Endpoints
 - `GET /api/health`

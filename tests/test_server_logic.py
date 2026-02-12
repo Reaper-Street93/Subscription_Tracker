@@ -179,6 +179,19 @@ class ServerLogicTests(unittest.TestCase):
         self.assertFalse(limited)
         self.assertEqual(retry, 0)
 
+    def test_default_security_headers_include_required_policies(self) -> None:
+        headers = dict(server.default_security_headers())
+        self.assertIn("Content-Security-Policy", headers)
+        self.assertIn("X-Frame-Options", headers)
+        self.assertIn("X-Content-Type-Options", headers)
+        self.assertIn("Referrer-Policy", headers)
+        self.assertIn("Permissions-Policy", headers)
+
+        csp = headers["Content-Security-Policy"]
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("script-src 'self'", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+
 
 if __name__ == "__main__":
     unittest.main()

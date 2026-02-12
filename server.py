@@ -46,6 +46,28 @@ def utc_now_iso() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
 
 
+def default_security_headers() -> list[tuple[str, str]]:
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return [
+        ("Content-Security-Policy", csp),
+        ("X-Frame-Options", "DENY"),
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "strict-origin-when-cross-origin"),
+        ("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()"),
+    ]
+
+
 def should_use_secure_cookie() -> bool:
     cookie_secure_env = os.environ.get("COOKIE_SECURE", "").strip().lower()
     if cookie_secure_env in {"1", "true", "yes", "on"}:
@@ -385,6 +407,12 @@ def ensure_category_exists(conn: sqlite3.Connection, user_id: int, category: str
 class SubscriptionHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
+
+    def end_headers(self) -> None:
+        # Apply baseline browser security headers for both API and static responses.
+        for key, value in default_security_headers():
+            self.send_header(key, value)
+        super().end_headers()
 
     def _send_json(
         self,
