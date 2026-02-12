@@ -56,9 +56,9 @@ From project root:
 
 ## Go Live (Render)
 1. Open the Render blueprint deploy link for this repo:  
-   [Deploy Subscription Tracker](https://dashboard.render.com/blueprint/new?repo=https://github.com/Reaper-Street93/Subscription_Tracker)
+   [Deploy SubTracker](https://dashboard.render.com/blueprint/new?repo=https://github.com/Reaper-Street93/Subscription_Tracker)
 2. Render will read `/render.yaml` and provision the web service with production-safe env defaults.
-3. After deploy finishes, open the generated Render URL (for example `https://subscription-tracker-app.onrender.com`).
+3. After deploy finishes, open the generated Render URL (expected: `https://subtracker.onrender.com`).
 4. Verify health endpoint:
    - `GET /api/health` should return `{ \"ok\": true }`.
 

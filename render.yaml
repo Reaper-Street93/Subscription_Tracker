@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: subscription-tracker-app
+    name: subtracker
     env: docker
     plan: free
     autoDeploy: true
