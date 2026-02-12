@@ -96,7 +96,7 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('currencyDisplay: "narrowSymbol"', self.app_js)
 
     def test_app_has_greeting_and_chart_total(self) -> None:
-        self.assertIn("hello ${firstName}", self.app_js)
+        self.assertIn("Hello, ${firstName}.", self.app_js)
         self.assertIn("chartTotalEl", self.app_js)
 
 

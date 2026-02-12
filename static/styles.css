@@ -163,6 +163,11 @@ body {
   flex-wrap: wrap;
 }
 
+.hero-main {
+  display: grid;
+  gap: 0.8rem;
+}
+
 .kicker {
   margin: 0;
   font-size: 0.74rem;
