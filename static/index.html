@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SubTracker</title>
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem("subtracker-theme") === "light") {
+            document.documentElement.classList.add("theme-light");
+          }
+        } catch (_error) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -13,9 +22,12 @@
     <nav class="site-nav" aria-label="Main navigation">
       <div class="nav-inner">
         <a class="brand" href="/">SubTracker</a>
-        <div class="nav-links">
-          <a href="/" class="active" aria-current="page">Dashboard</a>
-          <a href="/about.html">About</a>
+        <div class="nav-right">
+          <div class="nav-links">
+            <a href="/" class="active" aria-current="page">Dashboard</a>
+            <a href="/about.html">About</a>
+          </div>
+          <button type="button" class="secondary-btn theme-toggle" data-theme-toggle>Light mode</button>
         </div>
       </div>
     </nav>
@@ -208,6 +220,7 @@
       </div>
     </main>
 
+    <script src="/theme.js" defer></script>
     <script src="/app.js" defer></script>
   </body>
 </html>

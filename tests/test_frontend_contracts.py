@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX_HTML = ROOT / "static" / "index.html"
 ABOUT_HTML = ROOT / "static" / "about.html"
 APP_JS = ROOT / "static" / "app.js"
+THEME_JS = ROOT / "static" / "theme.js"
 STYLES_CSS = ROOT / "static" / "styles.css"
 
 
@@ -14,6 +15,7 @@ class FrontendContractsTests(unittest.TestCase):
         cls.index = INDEX_HTML.read_text(encoding="utf-8")
         cls.about = ABOUT_HTML.read_text(encoding="utf-8")
         cls.app_js = APP_JS.read_text(encoding="utf-8")
+        cls.theme_js = THEME_JS.read_text(encoding="utf-8")
         cls.styles = STYLES_CSS.read_text(encoding="utf-8")
 
     def test_index_has_auth_and_app_shell_regions(self) -> None:
@@ -69,6 +71,16 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("Seb Barclay", self.about)
         self.assertIn("About Me", self.about)
         self.assertIn("/about.html", self.about)
+
+    def test_theme_toggle_is_present_on_pages(self) -> None:
+        self.assertIn("data-theme-toggle", self.index)
+        self.assertIn("data-theme-toggle", self.about)
+        self.assertIn('/theme.js', self.index)
+        self.assertIn('/theme.js', self.about)
+
+    def test_theme_script_has_persistence_key(self) -> None:
+        self.assertIn("subtracker-theme", self.theme_js)
+        self.assertIn("localStorage.setItem", self.theme_js)
 
 
 if __name__ == "__main__":

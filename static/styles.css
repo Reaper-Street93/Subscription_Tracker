@@ -1,5 +1,31 @@
 :root {
-  --bg: #f4f7fb;
+  --bg-start: #080f1a;
+  --bg-end: #0f1726;
+  --surface: #111b2d;
+  --surface-soft: #152238;
+  --text: #e6edf8;
+  --text-soft: #9fb1cc;
+  --line: #253552;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --success: #34d399;
+  --danger: #fb7185;
+  --warning: #fbbf24;
+  --shadow: 0 14px 34px rgba(2, 7, 18, 0.45);
+  --nav-bg: rgba(11, 18, 32, 0.92);
+  --brand-bg: #1f2a40;
+  --brand-text: #dbeafe;
+  --nav-link-bg: #1b2740;
+  --nav-link-text: #c7d7f1;
+  --manager-bg: #132136;
+  --chip-bg: #182942;
+  --row-line: #1c2a42;
+  --reminder-bg: #122238;
+}
+
+.theme-light {
+  --bg-start: #f8faff;
+  --bg-end: #eef3fb;
   --surface: #ffffff;
   --surface-soft: #f8faff;
   --text: #1e293b;
@@ -11,6 +37,15 @@
   --danger: #b91c1c;
   --warning: #b45309;
   --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --nav-bg: rgba(255, 255, 255, 0.94);
+  --brand-bg: #e8f0ff;
+  --brand-text: #1e3a8a;
+  --nav-link-bg: #e8f0ff;
+  --nav-link-text: #1e3a8a;
+  --manager-bg: #fbfcff;
+  --chip-bg: #f7faff;
+  --row-line: #edf1f7;
+  --reminder-bg: #fcfdff;
 }
 
 * {
@@ -20,7 +55,7 @@
 body {
   margin: 0;
   font-family: "Sora", "Segoe UI", sans-serif;
-  background: linear-gradient(180deg, #f8faff 0%, #eef3fb 100%);
+  background: linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
   color: var(--text);
 }
 
@@ -28,7 +63,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--nav-bg);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(8px);
 }
@@ -46,8 +81,18 @@ body {
 .brand {
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--text);
+  color: var(--brand-text);
   text-decoration: none;
+  background: var(--brand-bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+}
+
+.nav-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .nav-links {
@@ -65,8 +110,12 @@ body {
 
 .nav-links a:hover,
 .nav-links a.active {
-  background: #e8f0ff;
-  color: #1e3a8a;
+  background: var(--nav-link-bg);
+  color: var(--nav-link-text);
+}
+
+.theme-toggle {
+  min-width: 106px;
 }
 
 .layout {
@@ -241,13 +290,13 @@ button:hover {
 }
 
 .secondary-btn {
-  background: #eef2ff;
-  color: #1e3a8a;
-  border: 1px solid #c7d2fe;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
 }
 
 .secondary-btn:hover {
-  background: #e0e7ff;
+  background: var(--surface-soft);
 }
 
 .auth-toggle {
@@ -261,9 +310,9 @@ button:hover {
 }
 
 .mode-btn.active {
-  background: #dbeafe;
-  border-color: #93c5fd;
-  color: #1e3a8a;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
 }
 
 .form-message {
@@ -291,7 +340,7 @@ button:hover {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 0.7rem;
-  background: #fbfcff;
+  background: var(--manager-bg);
   display: grid;
   gap: 0.55rem;
 }
@@ -327,7 +376,7 @@ button:hover {
   border-radius: 999px;
   padding: 0.28rem 0.45rem;
   font-size: 0.78rem;
-  background: #f7faff;
+  background: var(--chip-bg);
 }
 
 .category-chip button {
@@ -358,7 +407,7 @@ table {
 th,
 td {
   text-align: left;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid var(--row-line);
   padding: 0.62rem 0.4rem;
   font-size: 0.86rem;
 }
@@ -379,25 +428,25 @@ td:last-child {
 
 .mini-btn {
   border-radius: 8px;
-  background: #fff1f2;
-  color: #991b1b;
-  border: 1px solid #fecdd3;
+  background: rgba(244, 63, 94, 0.18);
+  color: #fecdd3;
+  border: 1px solid rgba(251, 113, 133, 0.4);
   font-size: 0.76rem;
   padding: 0.3rem 0.5rem;
 }
 
 .mini-btn:hover {
-  background: #ffe4e6;
+  background: rgba(244, 63, 94, 0.28);
 }
 
 .mini-btn.edit-btn {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border-color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.22);
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.45);
 }
 
 .mini-btn.edit-btn:hover {
-  background: #dbeafe;
+  background: rgba(59, 130, 246, 0.34);
 }
 
 .empty-state {
@@ -427,7 +476,7 @@ td:last-child {
   position: absolute;
   inset: 23%;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
 }
 
@@ -483,7 +532,7 @@ td:last-child {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0.6rem 0.65rem;
-  background: #fcfdff;
+  background: var(--reminder-bg);
   display: grid;
   gap: 0.26rem;
 }

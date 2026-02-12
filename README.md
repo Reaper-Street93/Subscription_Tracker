@@ -4,6 +4,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 
 ## Features
 - User authentication (sign up, sign in, sign out)
+- Theme switcher (dark/light, default dark)
 - Add subscription
 - Edit subscription
 - Search, filter, and sort subscriptions
