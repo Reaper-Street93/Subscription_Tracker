@@ -554,19 +554,15 @@ def parse_auth_payload(body: dict[str, object], require_name: bool) -> tuple[dic
 
 def parse_password_reset_payload(body: dict[str, object]) -> tuple[dict[str, str] | None, str | None]:
     email = str(body.get("email", "")).strip().lower()
-    current_password = str(body.get("currentPassword", ""))
     new_password = str(body.get("newPassword", ""))
 
     if "@" not in email or "." not in email:
         return None, "A valid email is required"
-    if len(current_password) < 8:
-        return None, "Current password must be at least 8 characters"
     if len(new_password) < 8:
         return None, "New password must be at least 8 characters"
 
     return {
         "email": email,
-        "current_password": current_password,
         "new_password": new_password,
     }, None
 
@@ -971,6 +967,7 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
             return self._send_json({"error": error or "Invalid payload"}, status=400)
 
         limit_key = f"{self._client_ip()}|{payload['email']}|reset"
+        user_id: int | None = None
         with self._db() as conn:
             cleanup_login_rate_limits(conn)
             limited, retry_after = check_login_rate_limit(conn, limit_key)
@@ -982,37 +979,31 @@ class SubscriptionHandler(SimpleHTTPRequestHandler):
                 )
 
             user = conn.execute("SELECT * FROM users WHERE email = ?", (payload["email"],)).fetchone()
-            if user is None or not verify_password(payload["current_password"], str(user["password_hash"])):
-                lock_seconds = register_login_failure(conn, limit_key)
-                if lock_seconds > 0:
-                    return self._send_json(
-                        {"error": "Too many reset attempts. Try again later."},
-                        status=429,
-                        extra_headers=[("Retry-After", str(lock_seconds))],
-                    )
-                log_security_event(
-                    "reset_password_failed",
-                    email_hash=hash_identifier(payload["email"]),
-                    client_ip=self._client_ip(),
+            if user is not None:
+                if verify_password(payload["new_password"], str(user["password_hash"])):
+                    return self._send_json({"error": "New password must be different from current password"}, status=400)
+
+                user_id = int(user["id"])
+                conn.execute(
+                    "UPDATE users SET password_hash = ? WHERE id = ?",
+                    (hash_password(payload["new_password"]), user_id),
                 )
-                return self._send_json({"error": "Invalid email or current password"}, status=401)
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+                clear_login_rate_limit(conn, limit_key)
 
-            if verify_password(payload["new_password"], str(user["password_hash"])):
-                return self._send_json({"error": "New password must be different from current password"}, status=400)
-
-            conn.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
-                (hash_password(payload["new_password"]), int(user["id"])),
+        if user_id is not None:
+            log_security_event(
+                "reset_password_succeeded",
+                user_id=user_id,
+                email_hash=hash_identifier(payload["email"]),
+                client_ip=self._client_ip(),
             )
-            conn.execute("DELETE FROM sessions WHERE user_id = ?", (int(user["id"]),))
-            clear_login_rate_limit(conn, limit_key)
-
-        log_security_event(
-            "reset_password_succeeded",
-            user_id=int(user["id"]),
-            email_hash=hash_identifier(payload["email"]),
-            client_ip=self._client_ip(),
-        )
+        else:
+            log_security_event(
+                "reset_password_requested_for_unknown_email",
+                email_hash=hash_identifier(payload["email"]),
+                client_ip=self._client_ip(),
+            )
         self._send_json({"reset": True})
 
     def _auth_logout(self) -> None:

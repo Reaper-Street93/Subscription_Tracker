@@ -131,6 +131,8 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("subtracker-spend-view", self.app_js)
         self.assertIn("nameInput.disabled = !isSignup", self.app_js)
         self.assertIn("nameInput.required = isSignup", self.app_js)
+        self.assertIn("authPasswordField.hidden = isReset", self.app_js)
+        self.assertIn("passwordInput.disabled = isReset", self.app_js)
         self.assertIn("authResetModeBtn.hidden", self.app_js)
         self.assertIn("authBackToLoginBtn.hidden", self.app_js)
         self.assertIn("authNewPasswordField.hidden", self.app_js)

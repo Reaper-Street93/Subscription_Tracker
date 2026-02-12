@@ -414,11 +414,12 @@ function setAuthMode(mode) {
   authTitle.textContent = isSignup ? "Create Account" : isReset ? "Reset Password" : "Sign In";
   authSubmitBtn.textContent = isSignup ? "Create Account" : isReset ? "Update Password" : "Sign In";
   authNameField.hidden = !isSignup;
+  authPasswordField.hidden = isReset;
   authNewPasswordField.hidden = !isReset;
   authConfirmPasswordField.hidden = !isReset;
   authResetModeBtn.hidden = !(!isSignup && !isReset);
   authBackToLoginBtn.hidden = !isReset;
-  authPasswordLabel.textContent = isReset ? "Current Password" : "Password";
+  authPasswordLabel.textContent = "Password";
 
   if (nameInput) {
     nameInput.disabled = !isSignup;
@@ -428,9 +429,13 @@ function setAuthMode(mode) {
     }
   }
   if (passwordInput) {
+    passwordInput.disabled = isReset;
+    passwordInput.required = !isReset;
     passwordInput.autocomplete = isSignup ? "new-password" : "current-password";
-    passwordInput.placeholder = isReset ? "Your current password" : "At least 8 characters";
-    passwordInput.required = true;
+    passwordInput.placeholder = "At least 8 characters";
+    if (isReset) {
+      passwordInput.value = "";
+    }
   }
   if (newPasswordInput) {
     newPasswordInput.disabled = !isReset;
@@ -449,7 +454,6 @@ function setAuthMode(mode) {
 
   authLoginModeBtn.classList.toggle("active", mode === "login");
   authSignupModeBtn.classList.toggle("active", isSignup);
-  authPasswordField.classList.toggle("reset-password-field", isReset);
 }
 
 function clearDataState() {
@@ -1089,7 +1093,6 @@ authForm.addEventListener("submit", async (event) => {
     payload.name = String(formData.get("authName") || "").trim();
   }
   if (wasReset) {
-    payload.currentPassword = String(formData.get("authPassword") || "");
     payload.newPassword = String(formData.get("authNewPassword") || "");
     const confirmPassword = String(formData.get("authConfirmPassword") || "");
     if (payload.newPassword !== confirmPassword) {
@@ -1109,7 +1112,7 @@ authForm.addEventListener("submit", async (event) => {
     if (wasReset) {
       authForm.reset();
       setAuthMode("login");
-      setAuthMessage("Password updated. Please sign in.", "success");
+      setAuthMessage("If an account exists for that email, the password has been updated. Please sign in.", "success");
       return;
     }
 

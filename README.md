@@ -4,7 +4,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 
 ## Features
 - User authentication (sign up, sign in, sign out)
-- Reset password flow from sign-in form (email + current password + new password)
+- Reset password flow from sign-in form (email + new password)
 - Theme switcher (dark/light, default dark)
 - Currency selector with conversion across money displays and form input (USD, GBP, EUR, CAD, AUD, JPY)
 - Add subscription

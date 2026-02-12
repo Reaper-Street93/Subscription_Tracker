@@ -59,13 +59,13 @@ class ServerLogicTests(unittest.TestCase):
 
     def test_parse_password_reset_payload_validates_input(self) -> None:
         payload, err = server.parse_password_reset_payload(
-            {"email": "jane@example.com", "currentPassword": "password123", "newPassword": "newpassword123"}
+            {"email": "jane@example.com", "newPassword": "newpassword123"}
         )
         self.assertIsNone(err)
         self.assertEqual(payload["email"], "jane@example.com")
 
         payload, err = server.parse_password_reset_payload(
-            {"email": "bad", "currentPassword": "short", "newPassword": "short"}
+            {"email": "bad", "newPassword": "short"}
         )
         self.assertIsNone(payload)
         self.assertEqual(err, "A valid email is required")
