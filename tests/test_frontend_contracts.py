@@ -88,6 +88,8 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("subtracker-currency", self.app_js)
         self.assertIn('currencySelect.addEventListener("change"', self.app_js)
         self.assertIn("formatMoney(", self.app_js)
+        self.assertIn("USD_EXCHANGE_RATES", self.app_js)
+        self.assertIn("convertDisplayToUsd", self.app_js)
 
 
 if __name__ == "__main__":

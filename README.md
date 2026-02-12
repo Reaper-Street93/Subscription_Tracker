@@ -5,7 +5,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 ## Features
 - User authentication (sign up, sign in, sign out)
 - Theme switcher (dark/light, default dark)
-- Currency selector for money display (USD, GBP, EUR, CAD, AUD, JPY)
+- Currency selector with conversion across money displays and form input (USD, GBP, EUR, CAD, AUD, JPY)
 - Add subscription
 - Edit subscription
 - Search, filter, and sort subscriptions

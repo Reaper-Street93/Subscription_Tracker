@@ -60,6 +60,14 @@ const pieColors = [
 
 const CURRENCY_STORAGE_KEY = "subtracker-currency";
 const DEFAULT_CURRENCY = "USD";
+const USD_EXCHANGE_RATES = {
+  USD: 1,
+  GBP: 0.79,
+  EUR: 0.92,
+  CAD: 1.35,
+  AUD: 1.53,
+  JPY: 149,
+};
 let currentCurrency = DEFAULT_CURRENCY;
 let currencyFormatter = createCurrencyFormatter(DEFAULT_CURRENCY);
 
@@ -78,8 +86,49 @@ function createCurrencyFormatter(code) {
   }
 }
 
+function currencyFractionDigits(code) {
+  return code === "JPY" ? 0 : 2;
+}
+
+function conversionRate(code = currentCurrency) {
+  return USD_EXCHANGE_RATES[code] || 1;
+}
+
+function convertUsdToDisplay(value) {
+  return (Number(value) || 0) * conversionRate();
+}
+
+function convertDisplayToUsd(value) {
+  return (Number(value) || 0) / conversionRate();
+}
+
+function normalizeDisplayAmount(value) {
+  return Number(convertUsdToDisplay(value).toFixed(currencyFractionDigits(currentCurrency)));
+}
+
+function updateAmountInputConfig() {
+  const amountInput = form?.elements?.amount;
+  if (!amountInput) {
+    return;
+  }
+  amountInput.min = currentCurrency === "JPY" ? "1" : "0.01";
+  amountInput.step = currentCurrency === "JPY" ? "1" : "0.01";
+  amountInput.placeholder = currentCurrency === "JPY" ? "1500" : "15.99";
+}
+
+function syncEditingAmountField() {
+  if (editingId === null) {
+    return;
+  }
+  const target = allSubscriptions.find((item) => item.id === editingId);
+  if (!target) {
+    return;
+  }
+  form.elements.amount.value = String(normalizeDisplayAmount(target.amount));
+}
+
 function formatMoney(value) {
-  return currencyFormatter.format(Number(value) || 0);
+  return currencyFormatter.format(convertUsdToDisplay(value));
 }
 
 function isSupportedCurrency(code) {
@@ -112,6 +161,8 @@ function setCurrency(code, persist = true) {
   if (billingCurrencyLabel) {
     billingCurrencyLabel.textContent = currentCurrency;
   }
+  updateAmountInputConfig();
+  syncEditingAmountField();
   if (!persist) {
     return;
   }
@@ -641,7 +692,7 @@ function setFormMode(mode, sub = null) {
 
     form.elements.name.value = sub.name;
     form.elements.category.value = sub.category;
-    form.elements.amount.value = String(sub.amount);
+    form.elements.amount.value = String(normalizeDisplayAmount(sub.amount));
     form.elements.billingCycle.value = sub.billingCycle;
     form.elements.nextPaymentDate.value = sub.initialPaymentDate;
     return;
@@ -822,7 +873,7 @@ form.addEventListener("submit", async (event) => {
   const payload = {
     name: String(formData.get("name") || "").trim(),
     category: String(formData.get("category") || "").trim(),
-    amount: Number(formData.get("amount")),
+    amount: Number(convertDisplayToUsd(formData.get("amount")).toFixed(2)),
     billingCycle: String(formData.get("billingCycle") || "").trim(),
     nextPaymentDate: String(formData.get("nextPaymentDate") || "").trim(),
   };
