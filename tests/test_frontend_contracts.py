@@ -119,6 +119,8 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("valueForSpendMode", self.app_js)
         self.assertIn("isScheduledThisMonth", self.app_js)
         self.assertIn("subtracker-spend-view", self.app_js)
+        self.assertIn("nameInput.disabled = !isSignup", self.app_js)
+        self.assertIn("nameInput.required = isSignup", self.app_js)
         self.assertIn('classList.toggle("auth-view"', self.app_js)
         self.assertIn("heroHeader.hidden", self.app_js)
 

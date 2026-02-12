@@ -399,10 +399,18 @@ function setDefaultDate() {
 function setAuthMode(mode) {
   authMode = mode;
   const isSignup = mode === "signup";
+  const nameInput = authForm.elements.authName;
 
   authTitle.textContent = isSignup ? "Create Account" : "Sign In";
   authSubmitBtn.textContent = isSignup ? "Create Account" : "Sign In";
   authNameField.hidden = !isSignup;
+  if (nameInput) {
+    nameInput.disabled = !isSignup;
+    nameInput.required = isSignup;
+    if (!isSignup) {
+      nameInput.value = "";
+    }
+  }
 
   authLoginModeBtn.classList.toggle("active", !isSignup);
   authSignupModeBtn.classList.toggle("active", isSignup);
