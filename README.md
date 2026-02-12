@@ -24,6 +24,7 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 - `static/index.html`: App layout and dashboard structure
 - `static/styles.css`: Visual design, responsive layout, motion, and theme
 - `static/app.js`: API integration and dynamic rendering
+- `render.yaml`: one-click Render deployment blueprint
 
 ## Run Locally
 1. Use Python 3.9+.
@@ -49,6 +50,14 @@ From project root:
    docker run --rm -p 8000:8000 subscription-compass
    ```
 3. Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+## Go Live (Render)
+1. Open the Render blueprint deploy link for this repo:  
+   [Deploy Subscription Tracker](https://dashboard.render.com/blueprint/new?repo=https://github.com/Reaper-Street93/Subscription_Tracker)
+2. Render will read `/render.yaml` and provision the web service with production-safe env defaults.
+3. After deploy finishes, open the generated Render URL (for example `https://subscription-tracker-app.onrender.com`).
+4. Verify health endpoint:
+   - `GET /api/health` should return `{ \"ok\": true }`.
 
 ## Deploy (Generic Python Host)
 - Build command: none required

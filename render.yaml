@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: subscription-tracker-app
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: COOKIE_SAMESITE
+        value: Lax
+      - key: SESSION_DURATION_DAYS
+        value: "7"
+      - key: SESSION_IDLE_TIMEOUT_MINUTES
+        value: "30"
+      - key: LOGIN_RATE_LIMIT_RETENTION_HOURS
+        value: "48"
