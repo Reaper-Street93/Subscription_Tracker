@@ -37,6 +37,8 @@ const categoryList = document.getElementById("categoryList");
 const searchInput = document.getElementById("searchInput");
 const categoryFilterSelect = document.getElementById("categoryFilterSelect");
 const sortSelect = document.getElementById("sortSelect");
+const currencySelect = document.getElementById("currencySelect");
+const billingCurrencyLabel = document.getElementById("billingCurrencyLabel");
 
 let editingId = null;
 let authMode = "login";
@@ -56,10 +58,69 @@ const pieColors = [
   "#90be6d",
 ];
 
-const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
+const CURRENCY_STORAGE_KEY = "subtracker-currency";
+const DEFAULT_CURRENCY = "USD";
+let currentCurrency = DEFAULT_CURRENCY;
+let currencyFormatter = createCurrencyFormatter(DEFAULT_CURRENCY);
+
+function createCurrencyFormatter(code) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: code === "JPY" ? 0 : 2,
+    });
+  } catch (_error) {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: DEFAULT_CURRENCY,
+    });
+  }
+}
+
+function formatMoney(value) {
+  return currencyFormatter.format(Number(value) || 0);
+}
+
+function isSupportedCurrency(code) {
+  if (!currencySelect) {
+    return code === DEFAULT_CURRENCY;
+  }
+  return Array.from(currencySelect.options).some((option) => option.value === code);
+}
+
+function getStoredCurrency() {
+  try {
+    const stored = (localStorage.getItem(CURRENCY_STORAGE_KEY) || "").toUpperCase();
+    if (isSupportedCurrency(stored)) {
+      return stored;
+    }
+  } catch (_error) {
+    // ignore storage errors and use default
+  }
+  return DEFAULT_CURRENCY;
+}
+
+function setCurrency(code, persist = true) {
+  const normalized = String(code || "").toUpperCase();
+  currentCurrency = isSupportedCurrency(normalized) ? normalized : DEFAULT_CURRENCY;
+  currencyFormatter = createCurrencyFormatter(currentCurrency);
+
+  if (currencySelect) {
+    currencySelect.value = currentCurrency;
+  }
+  if (billingCurrencyLabel) {
+    billingCurrencyLabel.textContent = currentCurrency;
+  }
+  if (!persist) {
+    return;
+  }
+  try {
+    localStorage.setItem(CURRENCY_STORAGE_KEY, currentCurrency);
+  } catch (_error) {
+    // ignore storage errors
+  }
+}
 
 function getCookieValue(name) {
   const pairs = document.cookie ? document.cookie.split("; ") : [];
@@ -201,7 +262,7 @@ function handleUnauthorized(error) {
 }
 
 function renderSummary(totalMonthlySpend, nextReminder) {
-  totalMonthlySpendEl.textContent = currency.format(totalMonthlySpend || 0);
+  totalMonthlySpendEl.textContent = formatMoney(totalMonthlySpend || 0);
 
   if (!nextReminder) {
     nextReminderEl.textContent = "No reminders";
@@ -238,10 +299,10 @@ function renderSubscriptions(subscriptions) {
     cycleCell.textContent = toFriendlyCycle(sub.billingCycle);
 
     const amountCell = document.createElement("td");
-    amountCell.textContent = currency.format(sub.amount);
+    amountCell.textContent = formatMoney(sub.amount);
 
     const monthlyCell = document.createElement("td");
-    monthlyCell.textContent = currency.format(sub.monthlyCost);
+    monthlyCell.textContent = formatMoney(sub.monthlyCost);
 
     const dateCell = document.createElement("td");
     dateCell.textContent = toFriendlyDate(sub.nextPaymentDate);
@@ -292,7 +353,7 @@ function renderReminders(reminders) {
     title.textContent = reminder.name;
 
     const dateLine = document.createElement("span");
-    dateLine.textContent = `${toFriendlyDate(reminder.nextPaymentDate)} • ${currency.format(reminder.amount)} (${toFriendlyCycle(
+    dateLine.textContent = `${toFriendlyDate(reminder.nextPaymentDate)} • ${formatMoney(reminder.amount)} (${toFriendlyCycle(
       reminder.billingCycle,
     )})`;
 
@@ -351,7 +412,7 @@ function renderPieChart(spendingByCategory) {
     label.append(colorDot, text);
 
     const value = document.createElement("span");
-    value.textContent = `${currency.format(item.monthlyCost)} (${share.toFixed(1)}%)`;
+    value.textContent = `${formatMoney(item.monthlyCost)} (${share.toFixed(1)}%)`;
 
     legendItem.append(label, value);
     pieLegendEl.appendChild(legendItem);
@@ -417,7 +478,7 @@ function maybeNotifyDueSoon(reminders) {
         : `is due in ${reminder.daysUntilPayment} day${reminder.daysUntilPayment === 1 ? "" : "s"}`;
 
     new Notification(`${reminder.name} payment reminder`, {
-      body: `${currency.format(reminder.amount)} ${dueText} (${toFriendlyDate(reminder.nextPaymentDate)}).`,
+      body: `${formatMoney(reminder.amount)} ${dueText} (${toFriendlyDate(reminder.nextPaymentDate)}).`,
     });
     localStorage.setItem(key, "1");
   }
@@ -831,10 +892,17 @@ newCategoryInput.addEventListener("keydown", (event) => {
 searchInput.addEventListener("input", applyFiltersAndRender);
 categoryFilterSelect.addEventListener("change", applyFiltersAndRender);
 sortSelect.addEventListener("change", applyFiltersAndRender);
+if (currencySelect) {
+  currencySelect.addEventListener("change", () => {
+    setCurrency(currencySelect.value);
+    applyFiltersAndRender();
+  });
+}
 
 setAuthMode("login");
 setDefaultDate();
 sortSelect.value = "due_soon";
+setCurrency(getStoredCurrency(), false);
 updateNotificationStatus();
 renderCategoryControls();
 applyFiltersAndRender();

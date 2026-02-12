@@ -33,6 +33,8 @@ class FrontendContractsTests(unittest.TestCase):
             'id="searchInput"',
             'id="categoryFilterSelect"',
             'id="sortSelect"',
+            'id="currencySelect"',
+            'id="billingCurrencyLabel"',
         ]
         for marker in expected_ids:
             with self.subTest(marker=marker):
@@ -81,6 +83,11 @@ class FrontendContractsTests(unittest.TestCase):
     def test_theme_script_has_persistence_key(self) -> None:
         self.assertIn("subtracker-theme", self.theme_js)
         self.assertIn("localStorage.setItem", self.theme_js)
+
+    def test_app_has_currency_persistence_and_handler(self) -> None:
+        self.assertIn("subtracker-currency", self.app_js)
+        self.assertIn('currencySelect.addEventListener("change"', self.app_js)
+        self.assertIn("formatMoney(", self.app_js)
 
 
 if __name__ == "__main__":
