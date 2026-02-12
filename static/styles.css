@@ -246,6 +246,17 @@ body {
   gap: 0.7rem;
 }
 
+.chart-summary {
+  display: grid;
+  gap: 0.12rem;
+  justify-items: end;
+}
+
+.chart-total {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .panel h2 {
   margin: 0 0 0.65rem;
   font-size: 1.03rem;

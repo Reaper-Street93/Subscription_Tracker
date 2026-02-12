@@ -25,6 +25,7 @@ const subscriptionCountEl = document.getElementById("subscriptionCount");
 const nextReminderEl = document.getElementById("nextReminder");
 const pieChartEl = document.getElementById("pieChart");
 const pieLegendEl = document.getElementById("pieLegend");
+const chartTotalEl = document.getElementById("chartTotal");
 const nextPaymentInput = document.querySelector('input[name="nextPaymentDate"]');
 const enableNotificationsBtn = document.getElementById("enableNotificationsBtn");
 const notificationStatusEl = document.getElementById("notificationStatus");
@@ -68,20 +69,41 @@ const USD_EXCHANGE_RATES = {
   AUD: 1.53,
   JPY: 149,
 };
+const CURRENCY_LOCALES = {
+  USD: "en-US",
+  GBP: "en-GB",
+  EUR: "de-DE",
+  CAD: "en-CA",
+  AUD: "en-AU",
+  JPY: "ja-JP",
+};
+const FALLBACK_CURRENCY_SYMBOLS = {
+  USD: "$",
+  GBP: "£",
+  EUR: "€",
+  CAD: "C$",
+  AUD: "A$",
+  JPY: "¥",
+};
 let currentCurrency = DEFAULT_CURRENCY;
 let currencyFormatter = createCurrencyFormatter(DEFAULT_CURRENCY);
 
 function createCurrencyFormatter(code) {
+  const locale = CURRENCY_LOCALES[code] || CURRENCY_LOCALES[DEFAULT_CURRENCY];
+  const digits = currencyFractionDigits(code);
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency: code,
-      maximumFractionDigits: code === "JPY" ? 0 : 2,
+      currencyDisplay: "narrowSymbol",
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     });
   } catch (_error) {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(CURRENCY_LOCALES[DEFAULT_CURRENCY], {
       style: "currency",
       currency: DEFAULT_CURRENCY,
+      currencyDisplay: "narrowSymbol",
     });
   }
 }
@@ -127,8 +149,24 @@ function syncEditingAmountField() {
   form.elements.amount.value = String(normalizeDisplayAmount(target.amount));
 }
 
+function fallbackCurrencyFormat(amount) {
+  const locale = CURRENCY_LOCALES[currentCurrency] || CURRENCY_LOCALES[DEFAULT_CURRENCY];
+  const digits = currencyFractionDigits(currentCurrency);
+  const symbol = FALLBACK_CURRENCY_SYMBOLS[currentCurrency] || `${currentCurrency} `;
+  const absoluteNumber = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Math.abs(amount));
+  return `${amount < 0 ? "-" : ""}${symbol}${absoluteNumber}`;
+}
+
 function formatMoney(value) {
-  return currencyFormatter.format(convertUsdToDisplay(value));
+  const displayAmount = convertUsdToDisplay(value);
+  const formatted = currencyFormatter.format(displayAmount);
+  if (!formatted.includes(currentCurrency)) {
+    return formatted;
+  }
+  return fallbackCurrencyFormat(displayAmount);
 }
 
 function isSupportedCurrency(code) {
@@ -250,7 +288,10 @@ function setAuthenticatedUser(user) {
   userSession.hidden = !isLoggedIn;
 
   if (isLoggedIn) {
-    userBadge.textContent = `${user.name} • ${user.email}`;
+    const firstName = String(user.name || "")
+      .trim()
+      .split(/\s+/)[0] || String(user.email || "there").split("@")[0];
+    userBadge.textContent = `hello, ${firstName}.`;
     setAuthMessage("");
     setDefaultDate();
     updateNotificationStatus();
@@ -425,6 +466,10 @@ function renderReminders(reminders) {
 
 function renderPieChart(spendingByCategory) {
   pieLegendEl.innerHTML = "";
+  const total = spendingByCategory.reduce((sum, item) => sum + item.monthlyCost, 0);
+  if (chartTotalEl) {
+    chartTotalEl.textContent = `Total: ${formatMoney(total)} / month`;
+  }
 
   if (!spendingByCategory.length) {
     pieChartEl.style.background = "conic-gradient(#20374e 0% 100%)";
@@ -435,7 +480,6 @@ function renderPieChart(spendingByCategory) {
     return;
   }
 
-  const total = spendingByCategory.reduce((sum, item) => sum + item.monthlyCost, 0);
   let current = 0;
   const gradientParts = [];
 

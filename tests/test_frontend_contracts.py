@@ -35,6 +35,7 @@ class FrontendContractsTests(unittest.TestCase):
             'id="sortSelect"',
             'id="currencySelect"',
             'id="billingCurrencyLabel"',
+            'id="chartTotal"',
         ]
         for marker in expected_ids:
             with self.subTest(marker=marker):
@@ -90,6 +91,12 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("formatMoney(", self.app_js)
         self.assertIn("USD_EXCHANGE_RATES", self.app_js)
         self.assertIn("convertDisplayToUsd", self.app_js)
+        self.assertIn("CURRENCY_LOCALES", self.app_js)
+        self.assertIn('currencyDisplay: "narrowSymbol"', self.app_js)
+
+    def test_app_has_greeting_and_chart_total(self) -> None:
+        self.assertIn("hello,", self.app_js)
+        self.assertIn("chartTotalEl", self.app_js)
 
 
 if __name__ == "__main__":
