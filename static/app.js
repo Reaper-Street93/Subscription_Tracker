@@ -23,6 +23,8 @@ const emptyReminders = document.getElementById("emptyReminders");
 const totalMonthlySpendEl = document.getElementById("totalMonthlySpend");
 const subscriptionCountEl = document.getElementById("subscriptionCount");
 const nextReminderEl = document.getElementById("nextReminder");
+const heroTotalMonthlyEl = document.getElementById("heroTotalMonthly");
+const heroNextPaymentEl = document.getElementById("heroNextPayment");
 const pieChartEl = document.getElementById("pieChart");
 const pieLegendEl = document.getElementById("pieLegend");
 const chartTotalEl = document.getElementById("chartTotal");
@@ -355,9 +357,15 @@ function handleUnauthorized(error) {
 
 function renderSummary(totalMonthlySpend, nextReminder) {
   totalMonthlySpendEl.textContent = formatMoney(totalMonthlySpend || 0);
+  if (heroTotalMonthlyEl) {
+    heroTotalMonthlyEl.textContent = formatMoney(totalMonthlySpend || 0);
+  }
 
   if (!nextReminder) {
     nextReminderEl.textContent = "No reminders";
+    if (heroNextPaymentEl) {
+      heroNextPaymentEl.textContent = "No reminders";
+    }
     return;
   }
 
@@ -367,6 +375,9 @@ function renderSummary(totalMonthlySpend, nextReminder) {
       : `due in ${nextReminder.daysUntilPayment} day${nextReminder.daysUntilPayment === 1 ? "" : "s"}`;
 
   nextReminderEl.textContent = `${nextReminder.name} (${dueText})`;
+  if (heroNextPaymentEl) {
+    heroNextPaymentEl.textContent = `${nextReminder.name} (${dueText})`;
+  }
 }
 
 function renderSubscriptions(subscriptions) {

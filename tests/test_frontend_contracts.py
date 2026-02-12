@@ -37,6 +37,8 @@ class FrontendContractsTests(unittest.TestCase):
             'id="billingCurrencyLabel"',
             'id="chartTotal"',
             'class="user-greeting"',
+            'id="heroTotalMonthly"',
+            'id="heroNextPayment"',
         ]
         for marker in expected_ids:
             with self.subTest(marker=marker):
@@ -65,6 +67,7 @@ class FrontendContractsTests(unittest.TestCase):
             ".category-manager",
             ".filters-row",
             ".category-chip",
+            ".hero-aside",
         ]
         for selector in selectors:
             with self.subTest(selector=selector):
