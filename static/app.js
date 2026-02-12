@@ -42,6 +42,10 @@ const categoryFilterSelect = document.getElementById("categoryFilterSelect");
 const sortSelect = document.getElementById("sortSelect");
 const currencySelect = document.getElementById("currencySelect");
 const billingCurrencyLabel = document.getElementById("billingCurrencyLabel");
+const totalSpendTitleEl = document.getElementById("totalSpendTitle");
+const heroTotalLabelEl = document.getElementById("heroTotalLabel");
+const spendModeLabelEl = document.getElementById("spendModeLabel");
+const spendModeButtons = Array.from(document.querySelectorAll("[data-spend-mode]"));
 
 let editingId = null;
 let authMode = "login";
@@ -62,7 +66,18 @@ const pieColors = [
 ];
 
 const CURRENCY_STORAGE_KEY = "subtracker-currency";
+const SPEND_VIEW_STORAGE_KEY = "subtracker-spend-view";
 const DEFAULT_CURRENCY = "USD";
+const CYCLE_TO_MONTHS = {
+  monthly: 1,
+  quarterly: 3,
+  yearly: 12,
+};
+const SPEND_VIEW_MODES = {
+  MONTHLY_EQUIVALENT: "monthly_equivalent",
+  SCHEDULED_THIS_MONTH: "scheduled_this_month",
+  ANNUAL_TOTAL: "annual_total",
+};
 const USD_EXCHANGE_RATES = {
   USD: 1,
   GBP: 0.79,
@@ -89,6 +104,7 @@ const FALLBACK_CURRENCY_SYMBOLS = {
 };
 let currentCurrency = DEFAULT_CURRENCY;
 let currencyFormatter = createCurrencyFormatter(DEFAULT_CURRENCY);
+let spendViewMode = SPEND_VIEW_MODES.MONTHLY_EQUIVALENT;
 
 function createCurrencyFormatter(code) {
   const locale = CURRENCY_LOCALES[code] || CURRENCY_LOCALES[DEFAULT_CURRENCY];
@@ -169,6 +185,123 @@ function formatMoney(value) {
     return formatted;
   }
   return fallbackCurrencyFormat(displayAmount);
+}
+
+function parseDateParts(dateString) {
+  const [yearRaw, monthRaw, dayRaw] = String(dateString || "").split("-").map(Number);
+  if (!yearRaw || !monthRaw || !dayRaw) {
+    return null;
+  }
+  return {
+    year: yearRaw,
+    month: monthRaw - 1,
+    day: dayRaw,
+  };
+}
+
+function daysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function isScheduledThisMonth(sub, referenceDate = new Date()) {
+  const cycleMonths = CYCLE_TO_MONTHS[sub.billingCycle];
+  const initial = parseDateParts(sub.initialPaymentDate);
+  if (!cycleMonths || !initial) {
+    return false;
+  }
+
+  const monthDelta = (referenceDate.getFullYear() - initial.year) * 12 + (referenceDate.getMonth() - initial.month);
+  if (monthDelta < 0 || monthDelta % cycleMonths !== 0) {
+    return false;
+  }
+
+  const dueDay = Math.min(initial.day, daysInMonth(referenceDate.getFullYear(), referenceDate.getMonth()));
+  return dueDay >= 1;
+}
+
+function annualizedCost(sub) {
+  const cycleMonths = CYCLE_TO_MONTHS[sub.billingCycle] || 1;
+  return Number(sub.amount) * (12 / cycleMonths);
+}
+
+function valueForSpendMode(sub, mode = spendViewMode) {
+  if (mode === SPEND_VIEW_MODES.SCHEDULED_THIS_MONTH) {
+    return isScheduledThisMonth(sub) ? Number(sub.amount) : 0;
+  }
+  if (mode === SPEND_VIEW_MODES.ANNUAL_TOTAL) {
+    return annualizedCost(sub);
+  }
+  return Number(sub.monthlyCost);
+}
+
+function spendModeMeta(mode = spendViewMode) {
+  if (mode === SPEND_VIEW_MODES.SCHEDULED_THIS_MONTH) {
+    return {
+      title: "Scheduled This Month",
+      heroLabel: "Scheduled this month",
+      chartLabel: "Scheduled this month (cash flow)",
+      suffix: "this month",
+    };
+  }
+  if (mode === SPEND_VIEW_MODES.ANNUAL_TOTAL) {
+    return {
+      title: "Annual Total",
+      heroLabel: "Annual total",
+      chartLabel: "Annual total commitment",
+      suffix: "/ year",
+    };
+  }
+  return {
+    title: "Monthly Equivalent (Avg)",
+    heroLabel: "Monthly equivalent",
+    chartLabel: "Monthly equivalent (avg)",
+    suffix: "/ month",
+  };
+}
+
+function updateSpendModeLabels() {
+  const meta = spendModeMeta();
+  if (totalSpendTitleEl) {
+    totalSpendTitleEl.textContent = meta.title;
+  }
+  if (heroTotalLabelEl) {
+    heroTotalLabelEl.textContent = meta.heroLabel;
+  }
+  if (spendModeLabelEl) {
+    spendModeLabelEl.textContent = meta.chartLabel;
+  }
+}
+
+function isSupportedSpendMode(mode) {
+  return Object.values(SPEND_VIEW_MODES).includes(mode);
+}
+
+function getStoredSpendMode() {
+  try {
+    const stored = String(localStorage.getItem(SPEND_VIEW_STORAGE_KEY) || "");
+    if (isSupportedSpendMode(stored)) {
+      return stored;
+    }
+  } catch (_error) {
+    // ignore storage errors and use default
+  }
+  return SPEND_VIEW_MODES.MONTHLY_EQUIVALENT;
+}
+
+function setSpendMode(mode, persist = true) {
+  spendViewMode = isSupportedSpendMode(mode) ? mode : SPEND_VIEW_MODES.MONTHLY_EQUIVALENT;
+  for (const button of spendModeButtons) {
+    button.classList.toggle("active", button.dataset.spendMode === spendViewMode);
+  }
+  updateSpendModeLabels();
+  if (!persist) {
+    return;
+  }
+  try {
+    localStorage.setItem(SPEND_VIEW_STORAGE_KEY, spendViewMode);
+  } catch (_error) {
+    // ignore storage errors
+  }
 }
 
 function isSupportedCurrency(code) {
@@ -355,10 +488,10 @@ function handleUnauthorized(error) {
   return false;
 }
 
-function renderSummary(totalMonthlySpend, nextReminder) {
-  totalMonthlySpendEl.textContent = formatMoney(totalMonthlySpend || 0);
+function renderSummary(totalSpend, nextReminder) {
+  totalMonthlySpendEl.textContent = formatMoney(totalSpend || 0);
   if (heroTotalMonthlyEl) {
-    heroTotalMonthlyEl.textContent = formatMoney(totalMonthlySpend || 0);
+    heroTotalMonthlyEl.textContent = formatMoney(totalSpend || 0);
   }
 
   if (!nextReminder) {
@@ -477,16 +610,17 @@ function renderReminders(reminders) {
 
 function renderPieChart(spendingByCategory) {
   pieLegendEl.innerHTML = "";
-  const total = spendingByCategory.reduce((sum, item) => sum + item.monthlyCost, 0);
+  const total = spendingByCategory.reduce((sum, item) => sum + item.amount, 0);
+  const meta = spendModeMeta();
   if (chartTotalEl) {
-    chartTotalEl.textContent = `Total: ${formatMoney(total)} / month`;
+    chartTotalEl.textContent = `Total: ${formatMoney(total)} ${meta.suffix}`;
   }
 
   if (!spendingByCategory.length) {
     pieChartEl.style.background = "conic-gradient(#20374e 0% 100%)";
     const li = document.createElement("li");
     li.className = "legend-item";
-    li.textContent = "No spending data yet";
+    li.textContent = "No spending data for this view.";
     pieLegendEl.appendChild(li);
     return;
   }
@@ -496,7 +630,7 @@ function renderPieChart(spendingByCategory) {
 
   spendingByCategory.forEach((item, index) => {
     const color = pieColors[index % pieColors.length];
-    const share = total === 0 ? 0 : (item.monthlyCost / total) * 100;
+    const share = total === 0 ? 0 : (item.amount / total) * 100;
     const start = current;
     const end = current + share;
     gradientParts.push(`${color} ${start.toFixed(2)}% ${end.toFixed(2)}%`);
@@ -518,7 +652,7 @@ function renderPieChart(spendingByCategory) {
     label.append(colorDot, text);
 
     const value = document.createElement("span");
-    value.textContent = `${formatMoney(item.monthlyCost)} (${share.toFixed(1)}%)`;
+    value.textContent = `${formatMoney(item.amount)} (${share.toFixed(1)}%)`;
 
     legendItem.append(label, value);
     pieLegendEl.appendChild(legendItem);
@@ -680,15 +814,19 @@ function renderCategoryControls() {
   }
 }
 
-function buildSpendingByCategory(subscriptions) {
+function buildSpendingByCategory(subscriptions, mode = spendViewMode) {
   const totals = {};
   for (const sub of subscriptions) {
-    totals[sub.category] = (totals[sub.category] || 0) + Number(sub.monthlyCost);
+    const amount = valueForSpendMode(sub, mode);
+    if (amount <= 0) {
+      continue;
+    }
+    totals[sub.category] = (totals[sub.category] || 0) + amount;
   }
 
   return Object.entries(totals)
-    .map(([category, monthlyCost]) => ({ category, monthlyCost: Number(monthlyCost.toFixed(2)) }))
-    .sort((a, b) => b.monthlyCost - a.monthlyCost);
+    .map(([category, amount]) => ({ category, amount: Number(amount.toFixed(2)) }))
+    .sort((a, b) => b.amount - a.amount);
 }
 
 function getFilteredSubscriptions() {
@@ -705,9 +843,9 @@ function getFilteredSubscriptions() {
   filtered = [...filtered];
 
   if (sortMode === "cost_desc") {
-    filtered.sort((a, b) => b.monthlyCost - a.monthlyCost || a.name.localeCompare(b.name));
+    filtered.sort((a, b) => valueForSpendMode(b) - valueForSpendMode(a) || a.name.localeCompare(b.name));
   } else if (sortMode === "cost_asc") {
-    filtered.sort((a, b) => a.monthlyCost - b.monthlyCost || a.name.localeCompare(b.name));
+    filtered.sort((a, b) => valueForSpendMode(a) - valueForSpendMode(b) || a.name.localeCompare(b.name));
   } else if (sortMode === "name_asc") {
     filtered.sort((a, b) => a.name.localeCompare(b.name));
   } else if (sortMode === "newest") {
@@ -729,12 +867,12 @@ function remindersForSubscriptions(subscriptions) {
 function applyFiltersAndRender() {
   const filteredSubs = getFilteredSubscriptions();
   const filteredReminders = remindersForSubscriptions(filteredSubs);
-  const totalMonthly = filteredSubs.reduce((sum, sub) => sum + Number(sub.monthlyCost), 0);
+  const totalSpend = filteredSubs.reduce((sum, sub) => sum + valueForSpendMode(sub, spendViewMode), 0);
 
-  renderSummary(Number(totalMonthly.toFixed(2)), filteredReminders[0] || null);
+  renderSummary(Number(totalSpend.toFixed(2)), filteredReminders[0] || null);
   renderSubscriptions(filteredSubs);
   renderReminders(filteredReminders);
-  renderPieChart(buildSpendingByCategory(filteredSubs));
+  renderPieChart(buildSpendingByCategory(filteredSubs, spendViewMode));
 }
 
 function setFormMode(mode, sub = null) {
@@ -998,6 +1136,12 @@ newCategoryInput.addEventListener("keydown", (event) => {
 searchInput.addEventListener("input", applyFiltersAndRender);
 categoryFilterSelect.addEventListener("change", applyFiltersAndRender);
 sortSelect.addEventListener("change", applyFiltersAndRender);
+for (const button of spendModeButtons) {
+  button.addEventListener("click", () => {
+    setSpendMode(button.dataset.spendMode);
+    applyFiltersAndRender();
+  });
+}
 if (currencySelect) {
   currencySelect.addEventListener("change", () => {
     setCurrency(currencySelect.value);
@@ -1009,6 +1153,7 @@ setAuthMode("login");
 setDefaultDate();
 sortSelect.value = "due_soon";
 setCurrency(getStoredCurrency(), false);
+setSpendMode(getStoredSpendMode(), false);
 updateNotificationStatus();
 renderCategoryControls();
 applyFiltersAndRender();

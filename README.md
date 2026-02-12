@@ -11,10 +11,10 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
 - Search, filter, and sort subscriptions
 - Category management (create/delete categories)
 - Monthly cost auto-calculated (monthly, quarterly, yearly billing)
-- Total monthly spend summary
+- Spend summaries with view modes: monthly equivalent, scheduled this month, and annual total
 - Upcoming payment reminders
 - Optional browser notifications for payments due in 3 days or less
-- Pie chart of monthly spend by category
+- Pie chart of spend by category for the selected view mode
 
 ## Tech Stack
 - Backend: Python standard library (`http.server`, `sqlite3`)

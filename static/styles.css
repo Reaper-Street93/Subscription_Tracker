@@ -301,6 +301,33 @@ body {
   font-weight: 600;
 }
 
+.chart-mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  margin: 0.2rem 0 0.78rem;
+}
+
+.mode-pill {
+  padding: 0.4rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.mode-pill:hover {
+  background: var(--surface-soft);
+}
+
+.mode-pill.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.16);
+}
+
 .panel h2 {
   margin: 0 0 0.65rem;
   font-size: 1.03rem;
@@ -644,6 +671,10 @@ td:last-child {
 
   .chart-wrap {
     grid-template-columns: 1fr;
+  }
+
+  .chart-summary {
+    justify-items: start;
   }
 }
 

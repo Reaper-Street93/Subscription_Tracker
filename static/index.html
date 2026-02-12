@@ -60,7 +60,7 @@
           <aside class="hero-aside" aria-label="At a glance summary">
             <p class="hero-aside-title">At a Glance</p>
             <div class="hero-aside-stat">
-              <span class="subtle">Monthly total</span>
+              <span id="heroTotalLabel" class="subtle">Monthly equivalent</span>
               <strong id="heroTotalMonthly">$0.00</strong>
             </div>
             <div class="hero-aside-stat">
@@ -108,7 +108,7 @@
       <div id="appShell" hidden>
         <section class="stats-grid" aria-label="Monthly summary">
           <article class="stat-card">
-            <h2>Total Monthly Spend</h2>
+            <h2 id="totalSpendTitle">Monthly Equivalent (Avg)</h2>
             <p id="totalMonthlySpend" class="stat-value">$0.00</p>
           </article>
           <article class="stat-card">
@@ -181,9 +181,14 @@
             <div class="panel-header">
               <h2>Spend by Category</h2>
               <div class="chart-summary">
-                <span class="subtle">Monthly view</span>
+                <span id="spendModeLabel" class="subtle">Monthly equivalent (avg)</span>
                 <span id="chartTotal" class="subtle chart-total">Total: $0.00 / month</span>
               </div>
+            </div>
+            <div class="chart-mode-toggle" role="group" aria-label="Spending view mode">
+              <button type="button" class="mode-pill active" data-spend-mode="monthly_equivalent">Monthly Avg</button>
+              <button type="button" class="mode-pill" data-spend-mode="scheduled_this_month">This Month</button>
+              <button type="button" class="mode-pill" data-spend-mode="annual_total">Annual Total</button>
             </div>
             <div class="chart-wrap">
               <div id="pieChart" class="pie-chart" aria-label="Spending by category"></div>

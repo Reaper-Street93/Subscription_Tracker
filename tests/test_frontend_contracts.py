@@ -39,6 +39,12 @@ class FrontendContractsTests(unittest.TestCase):
             'class="user-greeting"',
             'id="heroTotalMonthly"',
             'id="heroNextPayment"',
+            'id="totalSpendTitle"',
+            'id="heroTotalLabel"',
+            'id="spendModeLabel"',
+            'data-spend-mode="monthly_equivalent"',
+            'data-spend-mode="scheduled_this_month"',
+            'data-spend-mode="annual_total"',
         ]
         for marker in expected_ids:
             with self.subTest(marker=marker):
@@ -68,6 +74,8 @@ class FrontendContractsTests(unittest.TestCase):
             ".filters-row",
             ".category-chip",
             ".hero-aside",
+            ".chart-mode-toggle",
+            ".mode-pill",
         ]
         for selector in selectors:
             with self.subTest(selector=selector):
@@ -101,6 +109,10 @@ class FrontendContractsTests(unittest.TestCase):
     def test_app_has_greeting_and_chart_total(self) -> None:
         self.assertIn("Hello, ${firstName}.", self.app_js)
         self.assertIn("chartTotalEl", self.app_js)
+        self.assertIn("SPEND_VIEW_MODES", self.app_js)
+        self.assertIn("valueForSpendMode", self.app_js)
+        self.assertIn("isScheduledThisMonth", self.app_js)
+        self.assertIn("subtracker-spend-view", self.app_js)
 
 
 if __name__ == "__main__":
