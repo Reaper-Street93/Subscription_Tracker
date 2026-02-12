@@ -404,6 +404,7 @@ function setAuthMode(mode) {
   authTitle.textContent = isSignup ? "Create Account" : "Sign In";
   authSubmitBtn.textContent = isSignup ? "Create Account" : "Sign In";
   authNameField.hidden = !isSignup;
+  authNameField.style.display = isSignup ? "" : "none";
   if (nameInput) {
     nameInput.disabled = !isSignup;
     nameInput.required = isSignup;

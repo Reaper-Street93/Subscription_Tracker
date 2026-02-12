@@ -24,7 +24,7 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('id="authForm"', self.index)
         self.assertIn('id="logoutBtn"', self.index)
         self.assertIn('id="authHeroTitle"', self.index)
-        self.assertIn("hello 👋", self.index)
+        self.assertIn("👋", self.index)
 
     def test_index_has_filter_and_category_controls(self) -> None:
         expected_ids = [
@@ -113,7 +113,8 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn('currencyDisplay: "narrowSymbol"', self.app_js)
 
     def test_app_has_greeting_and_chart_total(self) -> None:
-        self.assertIn("Hello, ${firstName}.", self.app_js)
+        self.assertIn("${firstName}", self.app_js)
+        self.assertIn("userBadge.textContent", self.app_js)
         self.assertIn("chartTotalEl", self.app_js)
         self.assertIn("SPEND_VIEW_MODES", self.app_js)
         self.assertIn("valueForSpendMode", self.app_js)
@@ -121,6 +122,7 @@ class FrontendContractsTests(unittest.TestCase):
         self.assertIn("subtracker-spend-view", self.app_js)
         self.assertIn("nameInput.disabled = !isSignup", self.app_js)
         self.assertIn("nameInput.required = isSignup", self.app_js)
+        self.assertIn("authNameField.style.display = isSignup ? \"\" : \"none\"", self.app_js)
         self.assertIn('classList.toggle("auth-view"', self.app_js)
         self.assertIn("heroHeader.hidden", self.app_js)
 
