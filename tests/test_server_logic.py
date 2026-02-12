@@ -1,0 +1,141 @@
+import sqlite3
+import tempfile
+import unittest
+from datetime import date, datetime
+from pathlib import Path
+
+import server
+
+
+class ServerLogicTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_db_path = server.DB_PATH
+        self._tmpdir = tempfile.TemporaryDirectory()
+        server.DB_PATH = Path(self._tmpdir.name) / "test_subscriptions.db"
+        server.init_db()
+
+    def tearDown(self) -> None:
+        server.DB_PATH = self._original_db_path
+        self._tmpdir.cleanup()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(server.DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def test_init_db_creates_required_tables(self) -> None:
+        with self._connect() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+
+        self.assertIn("users", tables)
+        self.assertIn("sessions", tables)
+        self.assertIn("subscriptions", tables)
+        self.assertIn("categories", tables)
+
+    def test_hash_and_verify_password(self) -> None:
+        hashed = server.hash_password("password123")
+        self.assertTrue(server.verify_password("password123", hashed))
+        self.assertFalse(server.verify_password("wrong-password", hashed))
+
+    def test_parse_auth_payload_validates_input(self) -> None:
+        payload, err = server.parse_auth_payload(
+            {"name": "Jane", "email": "jane@example.com", "password": "password123"},
+            require_name=True,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(payload["email"], "jane@example.com")
+
+        payload, err = server.parse_auth_payload(
+            {"email": "bad", "password": "short"},
+            require_name=False,
+        )
+        self.assertIsNone(payload)
+        self.assertEqual(err, "A valid email is required")
+
+    def test_subscription_payload_and_monthly_cost(self) -> None:
+        payload, err = server.parse_subscription_payload(
+            {
+                "name": "Notion",
+                "category": " Productivity  ",
+                "amount": 120,
+                "billingCycle": "yearly",
+                "nextPaymentDate": "2026-02-20",
+            }
+        )
+        self.assertIsNone(err)
+        self.assertEqual(payload["category"], "Productivity")
+        self.assertEqual(server.monthly_cost(payload["amount"], payload["billing_cycle"]), 10.0)
+
+        payload, err = server.parse_subscription_payload(
+            {
+                "name": "",
+                "category": "Streaming",
+                "amount": 10,
+                "billingCycle": "monthly",
+                "nextPaymentDate": "2026-02-20",
+            }
+        )
+        self.assertIsNone(payload)
+        self.assertEqual(err, "Subscription name is required")
+
+    def test_next_due_date_rolls_forward(self) -> None:
+        due = server.next_due_date(date(2025, 12, 15), "monthly", today=date(2026, 2, 12))
+        self.assertEqual(due.isoformat(), "2026-02-15")
+
+        yearly_due = server.next_due_date(date(2025, 2, 1), "yearly", today=date(2026, 2, 12))
+        self.assertEqual(yearly_due.isoformat(), "2027-02-01")
+
+    def test_seed_default_categories_and_ensure_category(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                ("Test User", "cat@example.com", server.hash_password("password123"), server.utc_now_iso()),
+            )
+            user_id = conn.execute(
+                "SELECT id FROM users WHERE email = ?", ("cat@example.com",)
+            ).fetchone()["id"]
+
+            server.seed_default_categories(conn, int(user_id))
+            server.seed_default_categories(conn, int(user_id))
+            rows = conn.execute(
+                "SELECT name FROM categories WHERE user_id = ?",
+                (int(user_id),),
+            ).fetchall()
+            self.assertGreaterEqual(len(rows), len(server.DEFAULT_CATEGORIES))
+
+            server.ensure_category_exists(conn, int(user_id), "Gaming")
+            server.ensure_category_exists(conn, int(user_id), "gaming")
+            count = conn.execute(
+                "SELECT COUNT(*) AS count FROM categories WHERE user_id = ? AND name = ? COLLATE NOCASE",
+                (int(user_id), "Gaming"),
+            ).fetchone()["count"]
+            self.assertEqual(count, 1)
+
+    def test_issue_session_persists_hashed_token(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                ("Session User", "session@example.com", server.hash_password("password123"), server.utc_now_iso()),
+            )
+            user_id = conn.execute(
+                "SELECT id FROM users WHERE email = ?", ("session@example.com",)
+            ).fetchone()["id"]
+
+            token = server.issue_session(conn, int(user_id))
+            token_hash = server.hash_session_token(token)
+            row = conn.execute(
+                "SELECT token_hash, expires_at FROM sessions WHERE user_id = ?",
+                (int(user_id),),
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row["token_hash"], token_hash)
+        expires_at = datetime.fromisoformat(row["expires_at"])
+        self.assertGreater(expires_at, datetime.utcnow())
+
+
+if __name__ == "__main__":
+    unittest.main()

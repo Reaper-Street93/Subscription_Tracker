@@ -33,6 +33,12 @@ A full-stack subscription tracker built with a Python backend and a vanilla HTML
    ```
 3. Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
+## Run Tests
+From project root:
+```bash
+/usr/bin/python3 -m unittest discover -s tests -v
+```
+
 ## Run With Docker
 1. Build:
    ```bash
